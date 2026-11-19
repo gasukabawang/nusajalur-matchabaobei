@@ -1,0 +1,1283 @@
+openapi: 3.1.0
+info:
+  title: NusaJalur API (matchabaobei)
+  description: 'Backend Microservice NusaJalur untuk Tugas 2 II3160 Teknologi Sistem
+    Terintegrasi.
+
+
+    - **Kelas**: K01
+
+    - **Subdomain / Slug**: `matchabaobei`
+
+    - **Base URL Publik**: `https://matchabaobei.stei.fun/api/v1`
+
+    - **Fitur Utama**: Wisata Jalan Kaki Budaya Terukur (Fitness & Heritage), Tiket
+    Digital Trail Pass, Verifikasi GPS Check-in, Pembagian Komisi UMKM & Kurator,
+    dan Integrasi B2B (X-API-Key).'
+  version: 1.0.0
+servers:
+- url: https://matchabaobei.stei.fun
+  description: Production Gateway (Cloudflare Tunnel)
+- url: http://localhost:8000
+  description: Local Development Core Service
+paths:
+  /api/v1/health:
+    get:
+      tags:
+      - Health
+      summary: Health Check
+      description: Mengembalikan status kesehatan sistem backend NusaJalur.
+      operationId: health_check_api_v1_health_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/v1/auth/register:
+    post:
+      tags:
+      - Authentication
+      summary: Registrasi Pengguna Baru
+      description: Mendaftarkan pengguna baru aplikasi mobile NusaJalur dan menerbitkan
+        JWT.
+      operationId: register_api_v1_auth_register_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegisterRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/auth/login:
+    post:
+      tags:
+      - Authentication
+      summary: Login Pengguna
+      description: Otentikasi email dan kata sandi pengguna, mengembalikan JWT Bearer
+        Token.
+      operationId: login_api_v1_auth_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLoginRequest'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/trails:
+    get:
+      tags:
+      - Trails & Routes
+      summary: Daftar Rute Jalan Kaki Budaya & Kebugaran
+      description: 'Mengambil daftar rute wisata jalan kaki budaya terukur.
+
+        Mendukung filter tema, durasi, dan kalkulasi jarak GPS Haversine dari titik
+        awal pengguna.'
+      operationId: get_trails_api_v1_trails_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: theme
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter tema (e.g. heritage, kuliner, arsitektur, alam)
+          title: Theme
+        description: Filter tema (e.g. heritage, kuliner, arsitektur, alam)
+      - name: max_duration_min
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: Durasi maksimum dalam menit
+          title: Max Duration Min
+        description: Durasi maksimum dalam menit
+      - name: lat
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Latitude posisi pengguna untuk kalkulasi jarak terdekat (Haversine)
+          title: Lat
+        description: Latitude posisi pengguna untuk kalkulasi jarak terdekat (Haversine)
+      - name: lon
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: number
+          - type: 'null'
+          description: Longitude posisi pengguna untuk kalkulasi jarak terdekat (Haversine)
+          title: Lon
+        description: Longitude posisi pengguna untuk kalkulasi jarak terdekat (Haversine)
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrailsListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/trails/{trail_id}:
+    get:
+      tags:
+      - Trails & Routes
+      summary: Detail Rute & Daftar Titik Pos (Waypoints)
+      description: Mengambil informasi lengkap rute beserta daftar waypoints (koordinat
+        GPS dan radius toleransi).
+      operationId: get_trail_detail_api_v1_trails__trail_id__get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: trail_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Trail Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrailDetailResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/trails/{trail_id}/pricing:
+    get:
+      tags:
+      - Trails & Routes
+      summary: Kalkulasi Harga Tiket Dinamis
+      description: 'Menghitung harga tiket dinamis berdasarkan jumlah pos wisata dan
+        jam kunjungan.
+
+        Kunjungan off-peak pagi hari mendapatkan diskon 20%.'
+      operationId: get_trail_pricing_api_v1_trails__trail_id__pricing_get
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: trail_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Trail Id
+      - name: visit_time
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: 'Format waktu HH:MM (contoh: ''06:30''). Jam pagi (05:00 -
+            08:30) mendapatkan diskon off-peak 20%'
+          title: Visit Time
+        description: 'Format waktu HH:MM (contoh: ''06:30''). Jam pagi (05:00 - 08:30)
+          mendapatkan diskon off-peak 20%'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrailPricingResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/passes:
+    post:
+      tags:
+      - Digital Passes & GPS Check-ins
+      summary: Pembelian Digital Trail Pass
+      description: 'Menerbitkan Digital Trail Pass (simulasi lunas instan).
+
+        Menghitung alokasi pendapatan secara otomatis: 70% voucher UMKM, 15% kurator
+        lokal, 15% platform.'
+      operationId: purchase_pass_api_v1_passes_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PassPurchaseRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PassDetailItem'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+      - HTTPBearer: []
+  /api/v1/passes/{pass_id}/checkins:
+    post:
+      tags:
+      - Digital Passes & GPS Check-ins
+      summary: Verifikasi GPS Check-in di Titik Pos
+      description: 'Memverifikasi posisi GPS pengguna terhadap titik pos (waypoint).
+
+        Jika jarak <= radius_m pos, check-in berhasil dan membuka kunci cerita sejarah
+        serta kode voucher promo UMKM.
+
+        Jika jarak > radius_m, mengembalikan kode error CHECKIN_OUT_OF_RANGE dengan
+        detail jarak.'
+      operationId: verify_checkin_api_v1_passes__pass_id__checkins_post
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: pass_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Pass Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckinRequest'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckinResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/users/me/trips:
+    get:
+      tags:
+      - User Profile & Trips
+      summary: Riwayat Perjalanan & Agregasi Kebugaran Pengguna
+      description: 'Mengambil riwayat tiket/pass yang dibeli, progres check-in tiap
+        titik pos,
+
+        serta total akumulasi langkah kaki dan kalori yang telah dicapai pengguna.'
+      operationId: get_my_trips_api_v1_users_me_trips_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserTripHistoryResponse'
+      security:
+      - HTTPBearer: []
+  /api/v1/public/destinations-nearby:
+    get:
+      tags:
+      - B2B Public Integration (X-API-Key)
+      summary: Daftar Destinasi & UMKM Terdekat (B2B)
+      description: 'Endpoint integrasi B2B untuk kelompok partner lain mencari titik
+        pos wisata & UMKM
+
+        terdekat berdasarkan koordinat GPS dan radius (formula Haversine).
+
+        Memerlukan autentikasi header X-API-Key.'
+      operationId: get_destinations_nearby_api_v1_public_destinations_nearby_get
+      parameters:
+      - name: lat
+        in: query
+        required: true
+        schema:
+          type: number
+          description: 'Latitude koordinat pencarian (contoh: -6.917464)'
+          title: Lat
+        description: 'Latitude koordinat pencarian (contoh: -6.917464)'
+      - name: lon
+        in: query
+        required: true
+        schema:
+          type: number
+          description: 'Longitude koordinat pencarian (contoh: 107.609072)'
+          title: Lon
+        description: 'Longitude koordinat pencarian (contoh: 107.609072)'
+      - name: radius_m
+        in: query
+        required: false
+        schema:
+          type: number
+          description: 'Radius pencarian dalam meter (default: 1000.0)'
+          default: 1000.0
+          title: Radius M
+        description: 'Radius pencarian dalam meter (default: 1000.0)'
+      - name: X-API-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DestinationsNearbyResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /api/v1/public/measured-trails:
+    get:
+      tags:
+      - B2B Public Integration (X-API-Key)
+      summary: Daftar Rute Wisata Terukur untuk Integrasi Kesehatan (B2B)
+      description: 'Endpoint integrasi B2B khusus kelompok Health & Wellbeing (Belva)
+        untuk mengambil data
+
+        rute jalan kaki budaya terukur lengkap dengan estimasi kalori, langkah, dan
+        durasi.
+
+        Memerlukan autentikasi header X-API-Key.'
+      operationId: get_measured_trails_api_v1_public_measured_trails_get
+      parameters:
+      - name: min_kcal
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: 'Kalori minimum yang dibakar (contoh: 150)'
+          title: Min Kcal
+        description: 'Kalori minimum yang dibakar (contoh: 150)'
+      - name: max_kcal
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          description: 'Kalori maksimum yang dibakar (contoh: 500)'
+          title: Max Kcal
+        description: 'Kalori maksimum yang dibakar (contoh: 500)'
+      - name: X-API-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Api-Key
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeasuredTrailsResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+components:
+  schemas:
+    CheckinRequest:
+      properties:
+        waypoint_id:
+          type: string
+          title: Waypoint Id
+          description: ID Waypoint yang dikunjungi
+          example: wp-braga-01
+        user_lat:
+          type: number
+          title: User Lat
+          description: Koordinat Latitude pengguna
+          example: -6.917464
+        user_lon:
+          type: number
+          title: User Lon
+          description: Koordinat Longitude pengguna
+          example: 107.609072
+      type: object
+      required:
+      - waypoint_id
+      - user_lat
+      - user_lon
+      title: CheckinRequest
+    CheckinResponse:
+      properties:
+        checkin_id:
+          type: string
+          title: Checkin Id
+        pass_id:
+          type: string
+          title: Pass Id
+        waypoint_id:
+          type: string
+          title: Waypoint Id
+        waypoint_name:
+          type: string
+          title: Waypoint Name
+        checked_in_at:
+          type: string
+          format: date-time
+          title: Checked In At
+        user_lat:
+          type: number
+          title: User Lat
+        user_lon:
+          type: number
+          title: User Lon
+        waypoint_lat:
+          type: number
+          title: Waypoint Lat
+        waypoint_lon:
+          type: number
+          title: Waypoint Lon
+        distance_m:
+          type: number
+          title: Distance M
+        radius_m:
+          type: integer
+          title: Radius M
+        is_valid:
+          type: boolean
+          title: Is Valid
+          default: true
+        message:
+          type: string
+          title: Message
+          default: Check-in GPS berhasil! Narasi sejarah & voucher UMKM telah terbuka.
+        story_text:
+          type: string
+          title: Story Text
+        umkm_name:
+          type: string
+          title: Umkm Name
+        voucher_code:
+          type: string
+          title: Voucher Code
+        voucher_desc:
+          type: string
+          title: Voucher Desc
+      type: object
+      required:
+      - checkin_id
+      - pass_id
+      - waypoint_id
+      - waypoint_name
+      - checked_in_at
+      - user_lat
+      - user_lon
+      - waypoint_lat
+      - waypoint_lon
+      - distance_m
+      - radius_m
+      - story_text
+      - umkm_name
+      - voucher_code
+      - voucher_desc
+      title: CheckinResponse
+    CuratorProfile:
+      properties:
+        id:
+          type: string
+          title: Id
+        name:
+          type: string
+          title: Name
+        bio:
+          type: string
+          title: Bio
+        avatar_url:
+          type: string
+          title: Avatar Url
+        badge:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Badge
+      type: object
+      required:
+      - id
+      - name
+      - bio
+      - avatar_url
+      title: CuratorProfile
+    DestinationNearbyItem:
+      properties:
+        waypoint_id:
+          type: string
+          title: Waypoint Id
+        name:
+          type: string
+          title: Name
+        category:
+          type: string
+          title: Category
+        description:
+          type: string
+          title: Description
+        lat:
+          type: number
+          title: Lat
+        lon:
+          type: number
+          title: Lon
+        distance_m:
+          type: number
+          title: Distance M
+        radius_m:
+          type: integer
+          title: Radius M
+        trail_id:
+          type: string
+          title: Trail Id
+        trail_title:
+          type: string
+          title: Trail Title
+        umkm_name:
+          type: string
+          title: Umkm Name
+        promo_teaser:
+          type: string
+          title: Promo Teaser
+      type: object
+      required:
+      - waypoint_id
+      - name
+      - category
+      - description
+      - lat
+      - lon
+      - distance_m
+      - radius_m
+      - trail_id
+      - trail_title
+      - umkm_name
+      - promo_teaser
+      title: DestinationNearbyItem
+    DestinationsNearbyResponse:
+      properties:
+        total_found:
+          type: integer
+          title: Total Found
+        query_lat:
+          type: number
+          title: Query Lat
+        query_lon:
+          type: number
+          title: Query Lon
+        search_radius_m:
+          type: number
+          title: Search Radius M
+        destinations:
+          items:
+            $ref: '#/components/schemas/DestinationNearbyItem'
+          type: array
+          title: Destinations
+      type: object
+      required:
+      - total_found
+      - query_lat
+      - query_lon
+      - search_radius_m
+      - destinations
+      title: DestinationsNearbyResponse
+    HTTPValidationError:
+      properties:
+        detail:
+          items:
+            $ref: '#/components/schemas/ValidationError'
+          type: array
+          title: Detail
+      type: object
+      title: HTTPValidationError
+    HealthResponse:
+      properties:
+        status:
+          type: string
+          title: Status
+          default: ok
+          example: ok
+      type: object
+      title: HealthResponse
+    MeasuredTrailItem:
+      properties:
+        trail_id:
+          type: string
+          title: Trail Id
+        title:
+          type: string
+          title: Title
+        theme:
+          type: string
+          title: Theme
+        description:
+          type: string
+          title: Description
+        city:
+          type: string
+          title: City
+        distance_km:
+          type: number
+          title: Distance Km
+        est_duration_min:
+          type: integer
+          title: Est Duration Min
+        est_steps:
+          type: integer
+          title: Est Steps
+        est_kcal:
+          type: integer
+          title: Est Kcal
+        difficulty:
+          type: string
+          title: Difficulty
+        waypoints_count:
+          type: integer
+          title: Waypoints Count
+        target_health_metric:
+          type: string
+          title: Target Health Metric
+          default: Walking fitness & cultural heritage discovery
+      type: object
+      required:
+      - trail_id
+      - title
+      - theme
+      - description
+      - city
+      - distance_km
+      - est_duration_min
+      - est_steps
+      - est_kcal
+      - difficulty
+      - waypoints_count
+      title: MeasuredTrailItem
+    MeasuredTrailsResponse:
+      properties:
+        total_trails:
+          type: integer
+          title: Total Trails
+        filter_min_kcal:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Filter Min Kcal
+        filter_max_kcal:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Filter Max Kcal
+        trails:
+          items:
+            $ref: '#/components/schemas/MeasuredTrailItem'
+          type: array
+          title: Trails
+      type: object
+      required:
+      - total_trails
+      - trails
+      title: MeasuredTrailsResponse
+    PassAllocation:
+      properties:
+        total_price_idr:
+          type: integer
+          title: Total Price Idr
+        umkm_allocation_idr:
+          type: integer
+          title: Umkm Allocation Idr
+          description: Alokasi 70% untuk dana voucher UMKM & kompensasi merchant
+        curator_allocation_idr:
+          type: integer
+          title: Curator Allocation Idr
+          description: Alokasi 15% untuk kurator lokal pembuat rute
+        platform_fee_idr:
+          type: integer
+          title: Platform Fee Idr
+          description: Alokasi 15% untuk operasional platform NusaJalur
+      type: object
+      required:
+      - total_price_idr
+      - umkm_allocation_idr
+      - curator_allocation_idr
+      - platform_fee_idr
+      title: PassAllocation
+    PassDetailItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        trail_id:
+          type: string
+          title: Trail Id
+        trail_title:
+          type: string
+          title: Trail Title
+        purchase_date:
+          type: string
+          format: date-time
+          title: Purchase Date
+        visit_date:
+          type: string
+          format: date-time
+          title: Visit Date
+        status:
+          type: string
+          title: Status
+        total_price_idr:
+          type: integer
+          title: Total Price Idr
+        allocation:
+          $ref: '#/components/schemas/PassAllocation'
+        total_waypoints:
+          type: integer
+          title: Total Waypoints
+        checked_in_count:
+          type: integer
+          title: Checked In Count
+        completion_percentage:
+          type: number
+          title: Completion Percentage
+        est_steps:
+          type: integer
+          title: Est Steps
+        est_kcal:
+          type: integer
+          title: Est Kcal
+        waypoints_progress:
+          items:
+            $ref: '#/components/schemas/WaypointProgress'
+          type: array
+          title: Waypoints Progress
+          default: []
+      type: object
+      required:
+      - id
+      - trail_id
+      - trail_title
+      - purchase_date
+      - visit_date
+      - status
+      - total_price_idr
+      - allocation
+      - total_waypoints
+      - checked_in_count
+      - completion_percentage
+      - est_steps
+      - est_kcal
+      title: PassDetailItem
+    PassPurchaseRequest:
+      properties:
+        trail_id:
+          type: string
+          title: Trail Id
+          description: ID rute jalan kaki budaya
+          example: trail-braga-heritage
+        visit_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Visit Date
+          description: 'Tanggal kunjungan yang direncanakan (default: hari ini)'
+        visit_time:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Visit Time
+          description: Jam kunjungan (HH:MM) untuk kalkulasi diskon off-peak
+          example: 07:00
+      type: object
+      required:
+      - trail_id
+      title: PassPurchaseRequest
+    TokenResponse:
+      properties:
+        access_token:
+          type: string
+          title: Access Token
+        token_type:
+          type: string
+          title: Token Type
+          default: bearer
+        user:
+          $ref: '#/components/schemas/UserResponse'
+      type: object
+      required:
+      - access_token
+      - user
+      title: TokenResponse
+    TrailDetailResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        title:
+          type: string
+          title: Title
+        slug:
+          type: string
+          title: Slug
+        theme:
+          type: string
+          title: Theme
+        description:
+          type: string
+          title: Description
+        city:
+          type: string
+          title: City
+        distance_km:
+          type: number
+          title: Distance Km
+        est_duration_min:
+          type: integer
+          title: Est Duration Min
+        est_steps:
+          type: integer
+          title: Est Steps
+        est_kcal:
+          type: integer
+          title: Est Kcal
+        price_idr:
+          type: integer
+          title: Price Idr
+        difficulty:
+          type: string
+          title: Difficulty
+        distance_from_user_km:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Distance From User Km
+          description: Jarak dari posisi pengguna ke titik awal rute (Haversine)
+        curator:
+          $ref: '#/components/schemas/CuratorProfile'
+        waypoints:
+          items:
+            $ref: '#/components/schemas/WaypointSimpleResponse'
+          type: array
+          title: Waypoints
+          default: []
+      type: object
+      required:
+      - id
+      - title
+      - slug
+      - theme
+      - description
+      - city
+      - distance_km
+      - est_duration_min
+      - est_steps
+      - est_kcal
+      - price_idr
+      - difficulty
+      - curator
+      title: TrailDetailResponse
+    TrailListItem:
+      properties:
+        id:
+          type: string
+          title: Id
+        title:
+          type: string
+          title: Title
+        slug:
+          type: string
+          title: Slug
+        theme:
+          type: string
+          title: Theme
+        description:
+          type: string
+          title: Description
+        city:
+          type: string
+          title: City
+        distance_km:
+          type: number
+          title: Distance Km
+        est_duration_min:
+          type: integer
+          title: Est Duration Min
+        est_steps:
+          type: integer
+          title: Est Steps
+        est_kcal:
+          type: integer
+          title: Est Kcal
+        price_idr:
+          type: integer
+          title: Price Idr
+        difficulty:
+          type: string
+          title: Difficulty
+        distance_from_user_km:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Distance From User Km
+          description: Jarak dari posisi pengguna ke titik awal rute (Haversine)
+        curator:
+          $ref: '#/components/schemas/CuratorProfile'
+      type: object
+      required:
+      - id
+      - title
+      - slug
+      - theme
+      - description
+      - city
+      - distance_km
+      - est_duration_min
+      - est_steps
+      - est_kcal
+      - price_idr
+      - difficulty
+      - curator
+      title: TrailListItem
+    TrailPricingResponse:
+      properties:
+        trail_id:
+          type: string
+          title: Trail Id
+        trail_title:
+          type: string
+          title: Trail Title
+        num_waypoints:
+          type: integer
+          title: Num Waypoints
+        base_trail_price_idr:
+          type: integer
+          title: Base Trail Price Idr
+        waypoint_subtotal_idr:
+          type: integer
+          title: Waypoint Subtotal Idr
+        subtotal_idr:
+          type: integer
+          title: Subtotal Idr
+        visit_time_evaluated:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Visit Time Evaluated
+        is_off_peak:
+          type: boolean
+          title: Is Off Peak
+        discount_percentage:
+          type: integer
+          title: Discount Percentage
+        discount_amount_idr:
+          type: integer
+          title: Discount Amount Idr
+        final_price_idr:
+          type: integer
+          title: Final Price Idr
+        pricing_rule:
+          type: string
+          title: Pricing Rule
+      type: object
+      required:
+      - trail_id
+      - trail_title
+      - num_waypoints
+      - base_trail_price_idr
+      - waypoint_subtotal_idr
+      - subtotal_idr
+      - visit_time_evaluated
+      - is_off_peak
+      - discount_percentage
+      - discount_amount_idr
+      - final_price_idr
+      - pricing_rule
+      title: TrailPricingResponse
+    TrailsListResponse:
+      properties:
+        total:
+          type: integer
+          title: Total
+        trails:
+          items:
+            $ref: '#/components/schemas/TrailListItem'
+          type: array
+          title: Trails
+      type: object
+      required:
+      - total
+      - trails
+      title: TrailsListResponse
+    UserLoginRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+          example: demo@nusajalur.id
+        password:
+          type: string
+          title: Password
+          example: demo1234
+      type: object
+      required:
+      - email
+      - password
+      title: UserLoginRequest
+    UserRegisterRequest:
+      properties:
+        email:
+          type: string
+          format: email
+          title: Email
+          example: traveler@nusajalur.id
+        password:
+          type: string
+          minLength: 6
+          title: Password
+          example: password123
+        full_name:
+          type: string
+          minLength: 2
+          title: Full Name
+          example: Budi Santoso
+      type: object
+      required:
+      - email
+      - password
+      - full_name
+      title: UserRegisterRequest
+    UserResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        email:
+          type: string
+          title: Email
+        full_name:
+          type: string
+          title: Full Name
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - email
+      - full_name
+      - created_at
+      title: UserResponse
+    UserTripHistoryResponse:
+      properties:
+        user_id:
+          type: string
+          title: User Id
+        user_name:
+          type: string
+          title: User Name
+        total_passes_purchased:
+          type: integer
+          title: Total Passes Purchased
+        total_completed_trips:
+          type: integer
+          title: Total Completed Trips
+        total_steps_achieved:
+          type: integer
+          title: Total Steps Achieved
+        total_kcal_burned:
+          type: integer
+          title: Total Kcal Burned
+        passes:
+          items:
+            $ref: '#/components/schemas/PassDetailItem'
+          type: array
+          title: Passes
+      type: object
+      required:
+      - user_id
+      - user_name
+      - total_passes_purchased
+      - total_completed_trips
+      - total_steps_achieved
+      - total_kcal_burned
+      - passes
+      title: UserTripHistoryResponse
+    ValidationError:
+      properties:
+        loc:
+          items:
+            anyOf:
+            - type: string
+            - type: integer
+          type: array
+          title: Location
+        msg:
+          type: string
+          title: Message
+        type:
+          type: string
+          title: Error Type
+        input:
+          title: Input
+        ctx:
+          type: object
+          title: Context
+      type: object
+      required:
+      - loc
+      - msg
+      - type
+      title: ValidationError
+    WaypointProgress:
+      properties:
+        waypoint_id:
+          type: string
+          title: Waypoint Id
+        waypoint_name:
+          type: string
+          title: Waypoint Name
+        sequence:
+          type: integer
+          title: Sequence
+        category:
+          type: string
+          title: Category
+        is_checked_in:
+          type: boolean
+          title: Is Checked In
+        checked_in_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Checked In At
+        story_text:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Story Text
+        umkm_name:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Umkm Name
+        voucher_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Voucher Code
+      type: object
+      required:
+      - waypoint_id
+      - waypoint_name
+      - sequence
+      - category
+      - is_checked_in
+      title: WaypointProgress
+    WaypointSimpleResponse:
+      properties:
+        id:
+          type: string
+          title: Id
+        sequence:
+          type: integer
+          title: Sequence
+        name:
+          type: string
+          title: Name
+        category:
+          type: string
+          title: Category
+        description:
+          type: string
+          title: Description
+        lat:
+          type: number
+          title: Lat
+        lon:
+          type: number
+          title: Lon
+        radius_m:
+          type: integer
+          title: Radius M
+        umkm_name:
+          type: string
+          title: Umkm Name
+        promo_teaser:
+          type: string
+          title: Promo Teaser
+      type: object
+      required:
+      - id
+      - sequence
+      - name
+      - category
+      - description
+      - lat
+      - lon
+      - radius_m
+      - umkm_name
+      - promo_teaser
+      title: WaypointSimpleResponse
+  securitySchemes:
+    HTTPBearer:
+      type: http
+      scheme: bearer
