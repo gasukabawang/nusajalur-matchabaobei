@@ -1,0 +1,78 @@
+services:
+  # 1. Core Service: FastAPI + SQLite (WAL mode)
+  core-service:
+    build:
+      context: .
+      dockerfile: ./docker/core/Dockerfile
+    image: nusajalur-core:matchabaobei
+    container_name: matchabaobei-core-service
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    environment:
+      - PROJECT_NAME=NusaJalur Backend
+      - PROJECT_SLUG=matchabaobei
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - HOST=0.0.0.0
+      - PORT=8000
+      - BASE_URL=https://matchabaobei.stei.fun
+      - API_V1_PREFIX=/api/v1
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-supersecretjwtkey_matchabaobei_tst2026_change_in_production}
+      - JWT_ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      - DATABASE_URL=sqlite:////app/data/nusajalur.db
+      - DEFAULT_API_KEY=${DEFAULT_API_KEY:-nj_live_matchabaobei_tst2026_secret_key}
+      - DEFAULT_API_KEY_NAME=${DEFAULT_API_KEY_NAME:-Belva Health & Wellbeing Group}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - nusajalur-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 2. Gateway: Nginx Reverse Proxy + Rate Limiter + CORS
+  gateway:
+    image: nginx:1.28-alpine
+    container_name: matchabaobei-gateway
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.25
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - core-service
+    networks:
+      - nusajalur-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 3. Tunnel: Cloudflare Zero Trust Tunnel
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: matchabaobei-cloudflare-tunnel
+    restart: unless-stopped
+    mem_limit: 64m
+    cpus: 0.25
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - gateway
+    networks:
+      - nusajalur-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  nusajalur-network:
+    driver: bridge
