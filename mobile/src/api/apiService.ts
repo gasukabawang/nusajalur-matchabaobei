@@ -31,12 +31,14 @@ export const apiService = {
 
   // Trails
   getTrails: async (params?: {
+    city?: string;
     theme?: string;
     max_duration_min?: number;
     lat?: number;
     lon?: number;
   }): Promise<{ total: number; trails: Trail[] }> => {
     const query = new URLSearchParams();
+    if (params?.city) query.append('city', params.city);
     if (params?.theme) query.append('theme', params.theme);
     if (params?.max_duration_min) query.append('max_duration_min', params.max_duration_min.toString());
     if (params?.lat !== undefined) query.append('lat', params.lat.toString());

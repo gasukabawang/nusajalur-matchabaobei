@@ -17,6 +17,7 @@ import { Colors } from '../theme/colors';
 import { apiService } from '../api/apiService';
 import { Trail, PricingCalculation } from '../types';
 import { useLanguage } from '../context/LanguageContext';
+import { TRAIL_TRANSLATIONS_EN } from '../theme/trailAssets';
 
 interface TrailDetailScreenProps {
   route: any;
@@ -25,7 +26,7 @@ interface TrailDetailScreenProps {
 
 export const TrailDetailScreen: React.FC<TrailDetailScreenProps> = ({ route, navigation }) => {
   const { trailId } = route.params;
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [trail, setTrail] = useState<Trail | null>(null);
   const [pricing, setPricing] = useState<PricingCalculation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -94,6 +95,11 @@ export const TrailDetailScreen: React.FC<TrailDetailScreenProps> = ({ route, nav
 
   const formatPrice = (price: number) => t.common.idr + ' ' + price.toLocaleString('id-ID');
 
+  const isEn = language === 'en';
+  const localized = isEn && trail && TRAIL_TRANSLATIONS_EN[trail.id] ? TRAIL_TRANSLATIONS_EN[trail.id] : null;
+  const displayTitle = localized ? localized.title : trail.title;
+  const displayDesc = localized ? localized.description : trail.description;
+
   return (
     <View style={styles.container}>
       {/* Top Header Navigation */}
@@ -120,8 +126,8 @@ export const TrailDetailScreen: React.FC<TrailDetailScreenProps> = ({ route, nav
             </View>
           </View>
 
-          <Text style={styles.trailTitle}>{trail.title}</Text>
-          <Text style={styles.trailDesc}>{trail.description}</Text>
+          <Text style={styles.trailTitle}>{displayTitle}</Text>
+          <Text style={styles.trailDesc}>{displayDesc}</Text>
 
           {/* Metric Badges */}
           <View style={styles.metricsGrid}>
@@ -169,8 +175,8 @@ export const TrailDetailScreen: React.FC<TrailDetailScreenProps> = ({ route, nav
           <View style={styles.pricingHeaderRow}>
             <Text style={styles.sectionTitle}>{t.detail.pricing}</Text>
             <View style={styles.offPeakDiscountTag}>
-              <Ionicons name="sparkles" size={12} color={Colors.amber} />
-              <Text style={styles.offPeakDiscountText}>{t.detail.offPeakDesc}</Text>
+              <Ionicons name="sparkles" size={11} color={Colors.amber} />
+              <Text style={styles.offPeakDiscountText} numberOfLines={1}>{t.detail.offPeakDesc}</Text>
             </View>
           </View>
           <Text style={styles.pricingSub}>
@@ -530,6 +536,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '800',
     marginBottom: 8,
+    flex: 1,
+    flexShrink: 1,
   },
   curatorCard: {
     flexDirection: 'row',
@@ -574,6 +582,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
   },
   offPeakDiscountTag: {
     flexDirection: 'row',
@@ -583,11 +593,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
+    flexShrink: 1,
   },
   offPeakDiscountText: {
     color: Colors.amber,
     fontSize: 10,
     fontWeight: '800',
+    flexShrink: 1,
   },
   pricingSub: {
     color: Colors.textMuted,

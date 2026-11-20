@@ -19,6 +19,7 @@ import { useLanguage } from '../context/LanguageContext';
 import { Colors } from '../theme/colors';
 import { apiService } from '../api/apiService';
 import { Trail } from '../types';
+import { TRAIL_IMAGES, TRAIL_TRANSLATIONS_EN } from '../theme/trailAssets';
 
 const { width } = Dimensions.get('window');
 
@@ -51,8 +52,9 @@ const TRAIL_COLORS: Record<string, string[]> = {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const { user, logout } = useAuth();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [trails, setTrails] = useState<Trail[]>([]);
+  const [selectedCity, setSelectedCity] = useState<'all' | 'Bandung' | 'Jakarta'>('all');
   const [selectedTheme, setSelectedTheme] = useState('all');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,8 +64,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   useEffect(() => {
     fetchTrails();
-    detectLocation();
-  }, [selectedTheme]);
+  }, [selectedCity, selectedTheme]);
 
   const detectLocation = async () => {
     try {
@@ -86,6 +87,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       setApiError(null);
       const activeCoords = coords || userCoords;
       const res = await apiService.getTrails({
+        city: selectedCity === 'all' ? undefined : selectedCity,
         theme: selectedTheme === 'all' ? undefined : selectedTheme,
         lat: activeCoords?.lat,
         lon: activeCoords?.lon,
@@ -130,18 +132,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const renderTrailCard = ({ item, index }: { item: Trail; index: number }) => {
     const themeEmoji = TRAIL_EMOJIS[item.theme] || TRAIL_EMOJIS.default;
     const themeColors = TRAIL_COLORS[item.theme] || TRAIL_COLORS.default;
+    const imageUrl = TRAIL_IMAGES[item.id] || 'https://images.unsplash.com/photo-1596402184320-417e7178b2cd?w=800';
+
+    // Localized title & description if English is selected
+    const isEn = language === 'en';
+    const localized = isEn && TRAIL_TRANSLATIONS_EN[item.id] ? TRAIL_TRANSLATIONS_EN[item.id] : null;
+    const displayTitle = localized ? localized.title : item.title;
+    const displayDesc = localized ? localized.description : item.description;
 
     return (
       <TouchableOpacity
         style={styles.card}
         onPress={() => navigation.navigate('TrailDetail', { trailId: item.id })}
-        activeOpacity={0.90}
+        activeOpacity={0.92}
       >
-        {/* Card Top — Illustrated Banner */}
-        <LinearGradient colors={themeColors} style={styles.cardBanner}>
-          {/* Deco circles */}
-          <View style={styles.bannerCircle1} />
-          <View style={styles.bannerCircle2} />
+        {/* Card Top — High-Resolution Photo Banner with Gradient Overlay */}
+        <View style={styles.imageBannerWrapper}>
+          <Image source={{ uri: imageUrl }} style={styles.cardImage} resizeMode="cover" />
+          <LinearGradient
+            colors={['rgba(26,46,34,0.15)', 'rgba(26,46,34,0.85)']}
+            style={styles.imageOverlay}
+          />
 
           <View style={styles.bannerContent}>
             <View style={styles.bannerLeft}>
@@ -151,6 +162,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               <View style={styles.themePill}>
                 <Text style={styles.themePillText}>{item.theme.toUpperCase()}</Text>
               </View>
+              <View style={[styles.cityBadge, item.city === 'Jakarta' ? styles.cityBadgeJkt : styles.cityBadgeBdg]}>
+                <Text style={styles.cityBadgeText}>{item.city}</Text>
+              </View>
             </View>
             {item.distance_from_user_km !== null && item.distance_from_user_km !== undefined && (
               <View style={styles.distancePill}>
@@ -159,21 +173,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
               </View>
             )}
           </View>
-
-          {/* Large emoji decorative */}
-          <Text style={styles.bannerBgEmoji}>{themeEmoji}</Text>
-        </LinearGradient>
+        </View>
 
         {/* Card Body */}
         <View style={styles.cardBody}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
+          <Text style={styles.cardTitle} numberOfLines={1}>{displayTitle}</Text>
           <View style={styles.locationRow}>
-            <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
+            <Ionicons name="location-sharp" size={12} color={item.city === 'Jakarta' ? Colors.sky : Colors.primary} />
             <Text style={styles.locationText}>
-              {item.city === 'Jakarta' ? 'Jakarta, DKI Jakarta' : t.home.bandung}
+              {item.city === 'Jakarta' ? t.home.jakarta : t.home.bandung}
             </Text>
           </View>
-          <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
+          <Text style={styles.cardDesc} numberOfLines={2}>{displayDesc}</Text>
 
           {/* Metrics row */}
           <View style={styles.metricsRow}>
@@ -213,7 +224,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
             <View>
               <Text style={styles.greetText}>{t.home.greeting}, {firstName} 👋</Text>
               <Text style={styles.locationLabel}>
-                <Ionicons name="location" size={12} color={Colors.primaryMid} /> {t.home.bandung}
+                <Ionicons name="location" size={12} color={Colors.primaryMid} />{' '}
+                {selectedCity === 'Jakarta' ? t.home.jakarta : selectedCity === 'Bandung' ? t.home.bandung : 'Bandung & Jakarta'}
               </Text>
             </View>
           </View>
@@ -243,6 +255,34 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         <Text style={styles.subtitle} numberOfLines={2}>
           {t.home.subtitle}
         </Text>
+
+        {/* City Filter Pills (Manual Selector) */}
+        <View style={styles.cityFilterRow}>
+          {[
+            { id: 'all' as const, label: t.home.cityAll, icon: 'globe-outline' },
+            { id: 'Bandung' as const, label: 'Bandung', icon: 'trail-sign-outline' },
+            { id: 'Jakarta' as const, label: 'Jakarta', icon: 'business-outline' },
+          ].map((city) => {
+            const isCityActive = selectedCity === city.id;
+            return (
+              <TouchableOpacity
+                key={city.id}
+                style={[styles.cityChip, isCityActive && styles.cityChipActive]}
+                onPress={() => setSelectedCity(city.id)}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name={city.icon as any}
+                  size={14}
+                  color={isCityActive ? '#fff' : Colors.textSecondary}
+                />
+                <Text style={[styles.cityChipText, isCityActive && styles.cityChipTextActive]}>
+                  {city.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
 
         {/* Theme Filter Chips */}
         <ScrollView
@@ -296,10 +336,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       ) : apiError ? (
         <View style={styles.errorBox}>
           <Text style={styles.errorEmoji}>📡</Text>
-          <Text style={styles.errorTitle}>Gagal Memuat Rute</Text>
+          <Text style={styles.errorTitle}>{t.home.errorLoading}</Text>
           <Text style={styles.errorMsg}>{apiError}</Text>
           <TouchableOpacity style={styles.retryBtn} onPress={() => { setLoading(true); fetchTrails(); }}>
-            <Text style={styles.retryText}>🔄 Coba Lagi</Text>
+            <Text style={styles.retryText}>{t.home.retryBtn}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -385,7 +425,38 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.textPrimary,
     lineHeight: 25,
-    marginBottom: 14,
+    marginBottom: 12,
+  },
+
+  // City selector pills
+  cityFilterRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  cityChip: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+  },
+  cityChipActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  cityChipText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  cityChipTextActive: {
+    color: '#fff',
   },
 
   // Theme chips
@@ -423,7 +494,7 @@ const styles = StyleSheet.create({
   // Card
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: 20,
+    borderRadius: 22,
     overflow: 'hidden',
     shadowColor: Colors.cardShadow,
     shadowOffset: { width: 0, height: 4 },
@@ -431,47 +502,56 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 4,
   },
-  cardBanner: {
-    height: 120,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  imageBannerWrapper: {
+    height: 145,
+    width: '100%',
+    position: 'relative',
     overflow: 'hidden',
   },
-  bannerCircle1: {
-    position: 'absolute', width: 100, height: 100,
-    borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.10)',
-    right: -20, top: -20,
+  cardImage: {
+    width: '100%',
+    height: '100%',
   },
-  bannerCircle2: {
-    position: 'absolute', width: 60, height: 60,
-    borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.08)',
-    left: -15, bottom: -15,
+  imageOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
   },
   bannerContent: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start',
+    position: 'absolute',
+    top: 12,
+    left: 14,
+    right: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  bannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  bannerLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   themeEmojiBox: {
-    width: 36, height: 36, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    width: 32, height: 32, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.3)',
     alignItems: 'center', justifyContent: 'center',
   },
-  themeEmoji: { fontSize: 18 },
+  themeEmoji: { fontSize: 16 },
   themePill: {
-    backgroundColor: 'rgba(255,255,255,0.22)',
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
   },
   themePillText: { color: '#fff', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
+  cityBadge: {
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
+  },
+  cityBadgeBdg: { backgroundColor: 'rgba(61, 122, 95, 0.85)' },
+  cityBadgeJkt: { backgroundColor: 'rgba(46, 134, 171, 0.85)' },
+  cityBadgeText: { color: '#fff', fontSize: 10, fontWeight: '800' },
   distancePill: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.20)',
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8,
   },
   distancePillText: { color: '#fff', fontSize: 11, fontWeight: '700' },
-  bannerBgEmoji: {
-    position: 'absolute', right: 16, bottom: 10,
-    fontSize: 56, opacity: 0.18,
-  },
 
   // Card body
   cardBody: { padding: 14 },
