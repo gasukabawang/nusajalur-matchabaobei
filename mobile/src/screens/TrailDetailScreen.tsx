@@ -172,11 +172,11 @@ export const TrailDetailScreen: React.FC<TrailDetailScreenProps> = ({ route, nav
 
         {/* Dynamic Pricing Selector */}
         <View style={styles.sectionCard}>
-          <View style={styles.pricingHeaderRow}>
+          <View style={styles.pricingTitleBlock}>
             <Text style={styles.sectionTitle}>{t.detail.pricing}</Text>
             <View style={styles.offPeakDiscountTag}>
-              <Ionicons name="sparkles" size={11} color={Colors.amber} />
-              <Text style={styles.offPeakDiscountText} numberOfLines={1}>{t.detail.offPeakDesc}</Text>
+              <Ionicons name="sparkles" size={12} color={Colors.amber} />
+              <Text style={styles.offPeakDiscountText}>{t.detail.offPeakDesc}</Text>
             </View>
           </View>
           <Text style={styles.pricingSub}>
@@ -201,8 +201,10 @@ export const TrailDetailScreen: React.FC<TrailDetailScreenProps> = ({ route, nav
                   styles.timeOptionText,
                   visitTime === '07:00' && styles.timeOptionTextActive,
                 ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
-                07:00 WIB ({t.home.alam === 'Nature' ? 'Morning' : 'Pagi'})
+                07:00 ({t.home.alam === 'Nature' ? 'Morning' : 'Pagi'})
               </Text>
             </TouchableOpacity>
 
@@ -223,8 +225,10 @@ export const TrailDetailScreen: React.FC<TrailDetailScreenProps> = ({ route, nav
                   styles.timeOptionText,
                   visitTime === '11:00' && styles.timeOptionTextActive,
                 ]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
               >
-                11:00 WIB ({t.home.alam === 'Nature' ? 'Normal' : 'Normal'})
+                11:00 ({t.home.alam === 'Nature' ? 'Normal' : 'Normal'})
               </Text>
             </TouchableOpacity>
           </View>
@@ -457,6 +461,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     marginBottom: 16,
+    overflow: 'hidden',
   },
   themeRow: {
     flexDirection: 'row',
@@ -530,6 +535,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     marginBottom: 16,
+    overflow: 'hidden',
   },
   sectionTitle: {
     color: Colors.textPrimary,
@@ -578,26 +584,25 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
   },
-  pricingHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
+  pricingTitleBlock: {
+    marginBottom: 8,
+    gap: 6,
+    width: '100%',
   },
   offPeakDiscountTag: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     backgroundColor: Colors.amberLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 8,
-    flexShrink: 1,
   },
   offPeakDiscountText: {
     color: Colors.amber,
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '800',
     flexShrink: 1,
   },
@@ -609,20 +614,23 @@ const styles = StyleSheet.create({
   },
   timeOptionRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     marginBottom: 14,
+    width: '100%',
   },
   timeOptionBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
     backgroundColor: Colors.surfaceSage,
     paddingVertical: 10,
+    paddingHorizontal: 6,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.border,
+    overflow: 'hidden',
   },
   timeOptionBtnActive: {
     borderColor: Colors.primary,
@@ -630,8 +638,9 @@ const styles = StyleSheet.create({
   },
   timeOptionText: {
     color: Colors.textMuted,
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
+    flexShrink: 1,
   },
   timeOptionTextActive: {
     color: Colors.primary,
