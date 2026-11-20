@@ -58,6 +58,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [userCoords, setUserCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTrails();
@@ -82,6 +83,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
 
   const fetchTrails = async (coords?: { lat: number; lon: number }) => {
     try {
+      setApiError(null);
       const activeCoords = coords || userCoords;
       const res = await apiService.getTrails({
         theme: selectedTheme === 'all' ? undefined : selectedTheme,
@@ -89,8 +91,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
         lon: activeCoords?.lon,
       });
       setTrails(res.trails);
-    } catch (err) {
+    } catch (err: any) {
       console.log('Error fetching trails:', err);
+      setApiError(err?.message || 'Tidak dapat terhubung ke server. Periksa koneksi atau ganti server di Profil.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -280,6 +283,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           </View>
           <ActivityIndicator size="large" color={Colors.primary} style={{ marginBottom: 12 }} />
           <Text style={styles.loadingText}>{t.home.loadingTrails}</Text>
+        </View>
+      ) : apiError ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorEmoji}>📡</Text>
+          <Text style={styles.errorTitle}>Gagal Memuat Rute</Text>
+          <Text style={styles.errorMsg}>{apiError}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => { setLoading(true); fetchTrails(); }}>
+            <Text style={styles.retryText}>🔄 Coba Lagi</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -491,4 +503,15 @@ const styles = StyleSheet.create({
   emptyEmoji: { fontSize: 48 },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: Colors.textPrimary },
   emptySub: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', paddingHorizontal: 32 },
+
+  // Error
+  errorBox: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 60, gap: 12, paddingHorizontal: 32 },
+  errorEmoji: { fontSize: 48 },
+  errorTitle: { fontSize: 18, fontWeight: '800', color: Colors.error },
+  errorMsg: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', lineHeight: 20 },
+  retryBtn: {
+    marginTop: 4, paddingHorizontal: 24, paddingVertical: 12,
+    backgroundColor: Colors.primary, borderRadius: 14,
+  },
+  retryText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 });

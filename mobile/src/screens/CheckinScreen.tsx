@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '../theme/colors';
 import { apiService } from '../api/apiService';
 import { PassDetail, WaypointProgress, CheckinResult } from '../types';
+import { useLanguage } from '../context/LanguageContext';
 
 interface CheckinScreenProps {
   route: any;
@@ -31,6 +32,7 @@ const BANDUNG_DEMO_COORDS = {
 
 export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation }) => {
   const { passId, trailTitle } = route.params;
+  const { t } = useLanguage();
   const [passData, setPassData] = useState<PassDetail | null>(null);
   const [selectedWaypoint, setSelectedWaypoint] = useState<WaypointProgress | null>(null);
   const [currentCoords, setCurrentCoords] = useState<{ lat: number; lon: number } | null>(null);
@@ -50,12 +52,12 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
       const p = trips.passes.find((item) => item.id === passId);
       if (p) {
         setPassData(p);
-        // Default to first unchecked waypoint
-        const firstUnchecked = p.waypoints_progress.find((w) => !w.is_checked_in) || p.waypoints_progress[0];
-        setSelectedWaypoint(firstUnchecked);
+        // Default select first incomplete waypoint, or fallback to first
+        const firstIncomplete = p.waypoints_progress.find((w) => !w.is_checked_in);
+        setSelectedWaypoint(firstIncomplete || p.waypoints_progress[0]);
       }
     } catch (err: any) {
-      console.log('Error loading pass:', err);
+      Alert.alert(t.common.error, err?.message || t.checkin.loadError);
     } finally {
       setLoading(false);
     }
@@ -67,48 +69,47 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
       if (status === 'granted') {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
         setCurrentCoords({ lat: loc.coords.latitude, lon: loc.coords.longitude });
-        setIsSimulated(false);
-      } else {
-        // Fallback to demo coordinate if permission denied
-        setCurrentCoords(BANDUNG_DEMO_COORDS);
-        setIsSimulated(true);
       }
     } catch {
-      setCurrentCoords(BANDUNG_DEMO_COORDS);
-      setIsSimulated(true);
+      // Ignore location error, will fall back or let user toggle simulation
     }
   };
 
   const toggleSimulation = () => {
     if (!isSimulated) {
-      setCurrentCoords(BANDUNG_DEMO_COORDS);
       setIsSimulated(true);
-      Alert.alert('📍 Mode Simulasi Aktif', 'Koordinat diubah ke Gedung Merdeka Bandung (-6.921130, 107.609650) untuk pengujian check-in.');
+      setCurrentCoords({ lat: BANDUNG_DEMO_COORDS.lat, lon: BANDUNG_DEMO_COORDS.lon });
+      Alert.alert('📍 Demo GPS Simulation ON', `Simulating presence at ${BANDUNG_DEMO_COORDS.label}`);
     } else {
+      setIsSimulated(false);
       detectDeviceLocation();
+      Alert.alert('📡 Real GPS Active', 'Reverted back to physical device sensor location.');
     }
   };
 
   const handlePerformCheckin = async () => {
     if (!selectedWaypoint || !currentCoords) {
-      Alert.alert('Perhatian', 'Menunggu koordinat GPS terdeteksi...');
+      Alert.alert(t.auth.attention, 'Lokasi GPS belum terdeteksi. Silakan aktifkan GPS atau gunakan Mode Demo.');
       return;
     }
 
     setVerifying(true);
     try {
-      const res = await apiService.verifyCheckin(passId, {
+      const res = await apiService.performCheckin(passId, {
         waypoint_id: selectedWaypoint.waypoint_id,
-        user_lat: currentCoords.lat,
-        user_lon: currentCoords.lon,
+        lat: currentCoords.lat,
+        lon: currentCoords.lon,
       });
 
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setUnlockedResult(res);
-      loadPassData(); // Refresh progress
+      await loadPassData(); // Refresh checklist & counts
     } catch (err: any) {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Check-in Belum Berhasil', err?.message || 'Anda belum berada di dalam radius pos ini.');
+      Alert.alert(
+        t.checkin.checkinFailed,
+        err?.message || 'Anda belum berada dalam radius geofence pos budaya ini.'
+      );
     } finally {
       setVerifying(false);
     }
@@ -118,7 +119,7 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Menghubungkan sensor radar GPS...</Text>
+        <Text style={styles.loadingText}>{t.common.loading}</Text>
       </View>
     );
   }
@@ -127,29 +128,25 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
     <View style={styles.container}>
       {/* Top Navigation */}
       <View style={styles.topNav}>
-        <TouchableOpacity style={styles.navButton} onPress={() => navigation.goBack()}>
+        <TouchableOpacity style={styles.navBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={20} color={Colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.navTitle} numberOfLines={1}>
-          Radar GPS Check-in
+          {t.checkin.title}
         </Text>
-        <TouchableOpacity style={styles.navButton} onPress={toggleSimulation}>
-          <Ionicons
-            name={isSimulated ? 'pin' : 'pin-outline'}
-            size={18}
-            color={isSimulated ? Colors.amber : Colors.textMuted}
-          />
+        <TouchableOpacity style={styles.navBtn} onPress={loadPassData}>
+          <Ionicons name="refresh" size={18} color={Colors.textMuted} />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Pass Header */}
+        {/* Pass Info Header */}
         <View style={styles.passHeaderCard}>
-          <Text style={styles.trailTitle}>{trailTitle || passData?.trail_title}</Text>
-          <Text style={styles.passProgressText}>
-            Progres Pos:{' '}
-            <Text style={{ color: Colors.primaryLight, fontWeight: 'bold' }}>
-              {passData?.checked_in_count} dari {passData?.total_waypoints} Selesai
+          <Text style={styles.trailSubtitle}>{trailTitle}</Text>
+          <Text style={styles.progressCounter}>
+            {t.checkin.progressHeader}{' '}
+            <Text style={{ color: Colors.primary, fontWeight: 'bold' }}>
+              {passData?.checked_in_count} {t.passes.of} {passData?.total_waypoints} {t.checkin.progressDone}
             </Text>
           </Text>
         </View>
@@ -166,14 +163,12 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
             color={isSimulated ? Colors.amber : Colors.primary}
           />
           <Text style={styles.simBannerText}>
-            {isSimulated
-              ? 'Mode Demo: Terhubung ke Gedung Merdeka Bandung'
-              : 'GPS Fisik HP: Ketuk untuk simulasi lokasi Bandung'}
+            {isSimulated ? t.checkin.simActive : t.checkin.simNormal}
           </Text>
         </TouchableOpacity>
 
         {/* Waypoint Selector Chips */}
-        <Text style={styles.selectorLabel}>PILIH TITIK POS TUJUAN:</Text>
+        <Text style={styles.selectorLabel}>{t.checkin.targetWaypoint}</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.waypointSelectorScroll}>
           {passData?.waypoints_progress.map((wp) => {
             const isSelected = selectedWaypoint?.waypoint_id === wp.waypoint_id;
@@ -221,13 +216,13 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
 
           <Text style={styles.activeWpName}>{selectedWaypoint?.waypoint_name}</Text>
           <Text style={styles.radiusRuleText}>
-            Toleransi Jarak Geofence: Radius 50 meter
+            {t.checkin.radarHint}
           </Text>
 
           {currentCoords && (
             <View style={styles.coordsBox}>
               <Text style={styles.coordsText}>
-                Koordinat Anda: {currentCoords.lat.toFixed(6)}, {currentCoords.lon.toFixed(6)}
+                {t.checkin.yourLocation}: {currentCoords.lat.toFixed(6)}, {currentCoords.lon.toFixed(6)}
               </Text>
             </View>
           )}
@@ -235,7 +230,7 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
           {selectedWaypoint?.is_checked_in ? (
             <View style={styles.alreadyDoneBox}>
               <Ionicons name="checkmark-done-circle" size={20} color={Colors.primary} />
-              <Text style={styles.alreadyDoneText}>Pos ini sudah selesai di-check-in!</Text>
+              <Text style={styles.alreadyDoneText}>{t.checkin.alreadyDone}</Text>
             </View>
           ) : (
             <TouchableOpacity
@@ -245,76 +240,107 @@ export const CheckinScreen: React.FC<CheckinScreenProps> = ({ route, navigation 
               activeOpacity={0.88}
             >
               <LinearGradient
-                colors={[Colors.primaryLight, Colors.primary]}
+                colors={[Colors.primary, Colors.primaryMid]}
                 style={styles.checkinBtnGradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
               >
                 {verifying ? (
-                  <ActivityIndicator color="#090D16" />
+                  <View style={styles.btnLoadingRow}>
+                    <ActivityIndicator color="#fff" size="small" />
+                    <Text style={styles.checkinBtnText}>{t.checkin.verifying}</Text>
+                  </View>
                 ) : (
-                  <>
-                    <Ionicons name="scan-circle" size={20} color="#090D16" style={{ marginRight: 8 }} />
-                    <Text style={styles.checkinBtnText}>Verifikasi GPS Check-in 📍</Text>
-                  </>
+                  <View style={styles.btnRow}>
+                    <Ionicons name="navigate-circle" size={20} color="#fff" />
+                    <Text style={styles.checkinBtnText}>{t.checkin.checkinBtn}</Text>
+                  </View>
                 )}
               </LinearGradient>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* Story & Voucher Result Modal */}
-        <Modal visible={unlockedResult !== null} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.unlockModalCard}>
-              <LinearGradient
-                colors={['rgba(16, 185, 129, 0.2)', 'transparent']}
-                style={styles.unlockModalHeader}
-              >
-                <View style={styles.trophyIcon}>
-                  <Ionicons name="ribbon" size={40} color={Colors.primary} />
-                </View>
-                <Text style={styles.unlockTitle}>Check-in GPS Berhasil! 🎉</Text>
-                <Text style={styles.unlockSub}>{unlockedResult?.waypoint_name}</Text>
-              </LinearGradient>
-
-              <ScrollView style={styles.unlockBody} showsVerticalScrollIndicator={false}>
-                {/* Historical Story Box */}
-                <View style={styles.storyBox}>
-                  <View style={styles.storyHeader}>
-                    <Ionicons name="book-outline" size={16} color={Colors.primary} />
-                    <Text style={styles.storyHeaderTitle}>Narasi Sejarah Terbuka</Text>
-                  </View>
-                  <Text style={styles.storyBodyText}>{unlockedResult?.story_text}</Text>
-                </View>
-
-                {/* UMKM Voucher Box */}
-                <View style={styles.voucherBox}>
-                  <View style={styles.voucherHeader}>
-                    <Ionicons name="pricetag" size={16} color={Colors.amber} />
-                    <Text style={styles.voucherHeaderTitle}>
-                      Voucher Mitra: {unlockedResult?.umkm_name}
+        {/* Waypoints Status Checklist */}
+        <View style={styles.checklistCard}>
+          <Text style={styles.checklistTitle}>{t.detail.waypoints}</Text>
+          {passData?.waypoints_progress.map((wp) => (
+            <View key={wp.waypoint_id} style={styles.checklistItem}>
+              <View style={styles.checklistLeft}>
+                <Ionicons
+                  name={wp.is_checked_in ? 'checkbox' : 'ellipse-outline'}
+                  size={20}
+                  color={wp.is_checked_in ? Colors.primary : Colors.textMuted}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.clWpName, wp.is_checked_in && styles.clWpNameDone]}>
+                    {wp.sequence}. {wp.waypoint_name}
+                  </Text>
+                  {wp.is_checked_in && wp.voucher_code && (
+                    <Text style={styles.clVoucherHint}>
+                      🎁 Voucher: <Text style={{ fontWeight: 'bold' }}>{wp.voucher_code}</Text>
                     </Text>
-                  </View>
-                  <Text style={styles.voucherDescText}>{unlockedResult?.voucher_desc}</Text>
-
-                  <View style={styles.voucherCodeContainer}>
-                    <Text style={styles.voucherCodeLabel}>KODE VOUCHER:</Text>
-                    <Text style={styles.voucherCodeVal}>{unlockedResult?.voucher_code}</Text>
-                  </View>
+                  )}
                 </View>
-              </ScrollView>
+              </View>
 
-              <TouchableOpacity
-                style={styles.closeUnlockBtn}
-                onPress={() => setUnlockedResult(null)}
-              >
-                <Text style={styles.closeUnlockText}>Tutup & Lanjutkan Jalan 🚶</Text>
-              </TouchableOpacity>
+              {wp.is_checked_in && (
+                <View style={styles.clBadgeDone}>
+                  <Text style={styles.clBadgeDoneText}>{t.passes.voucherUnlocked}</Text>
+                </View>
+              )}
             </View>
-          </View>
-        </Modal>
+          ))}
+        </View>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* Unlocked Reward Modal */}
+      <Modal visible={!!unlockedResult} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <LinearGradient
+              colors={[Colors.primary, Colors.primaryMid]}
+              style={styles.modalHeaderGrad}
+            >
+              <Text style={{ fontSize: 36 }}>🏛️</Text>
+              <Text style={styles.modalSuccessTitle}>{t.checkin.checkinSuccess}</Text>
+              <Text style={styles.modalDistance}>
+                Jarak terverifikasi: {unlockedResult?.distance_m} meter
+              </Text>
+            </LinearGradient>
+
+            <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+              <Text style={styles.storyHeader}>📖 {t.checkin.story}:</Text>
+              <Text style={styles.storyText}>{unlockedResult?.story_text}</Text>
+
+              {unlockedResult?.voucher_code && (
+                <View style={styles.voucherBox}>
+                  <View style={styles.voucherTop}>
+                    <Ionicons name="pricetags" size={20} color={Colors.amber} />
+                    <Text style={styles.voucherTitle}>🎉 {t.checkin.voucher}</Text>
+                  </View>
+                  <Text style={styles.voucherDesc}>{unlockedResult?.voucher_description}</Text>
+                  <View style={styles.voucherCodeContainer}>
+                    <Text style={styles.voucherCodeText}>{unlockedResult?.voucher_code}</Text>
+                  </View>
+                  <Text style={styles.voucherFootnote}>
+                    Tunjukkan kode ini kepada kasir UMKM untuk klaim potongan harga.
+                  </Text>
+                </View>
+              )}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={() => setUnlockedResult(null)}
+            >
+              <Text style={styles.modalCloseText}>Lanjutkan Perjalanan 👟</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -342,57 +368,63 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 52,
     paddingBottom: 12,
+    backgroundColor: Colors.background,
   },
-  navButton: {
+  navBtn: {
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: Colors.cardElevated,
+    backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   navTitle: {
     color: Colors.textPrimary,
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
+    flex: 1,
+    textAlign: 'center',
   },
   scrollContent: {
     padding: 16,
   },
   passHeaderCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 18,
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
     padding: 16,
     borderWidth: 1,
     borderColor: Colors.border,
     marginBottom: 12,
   },
-  trailTitle: {
+  trailSubtitle: {
     color: Colors.textPrimary,
-    fontSize: 17,
-    fontWeight: '800',
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 4,
   },
-  passProgressText: {
+  progressCounter: {
     color: Colors.textSecondary,
-    fontSize: 13,
-    marginTop: 4,
+    fontSize: 12,
   },
   simBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
     gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    marginBottom: 16,
+    borderWidth: 1.5,
   },
   simBannerNormal: {
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderColor: Colors.borderActive,
+    backgroundColor: Colors.primaryXPale,
+    borderColor: Colors.primaryPale,
   },
   simBannerActive: {
-    backgroundColor: 'rgba(245, 158, 11, 0.15)',
-    borderColor: 'rgba(245, 158, 11, 0.4)',
+    backgroundColor: Colors.amberLight,
+    borderColor: Colors.amber + '44',
   },
   simBannerText: {
     color: Colors.textPrimary,
@@ -404,27 +436,27 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.5,
     marginBottom: 8,
+    letterSpacing: 0.5,
   },
   waypointSelectorScroll: {
     marginBottom: 16,
   },
   waypointChip: {
-    backgroundColor: Colors.card,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
-    borderWidth: 1,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
     borderColor: Colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     marginRight: 8,
   },
   waypointChipActive: {
     borderColor: Colors.primary,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    backgroundColor: Colors.primaryXPale,
   },
   waypointChipDone: {
-    borderColor: 'rgba(16, 185, 129, 0.3)',
+    borderColor: Colors.primaryLight,
   },
   chipRow: {
     flexDirection: 'row',
@@ -434,86 +466,105 @@ const styles = StyleSheet.create({
   chipSequence: {
     color: Colors.textMuted,
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
   chipName: {
     color: Colors.textSecondary,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     maxWidth: 140,
   },
   chipNameActive: {
     color: Colors.primary,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   chipNameDone: {
     color: Colors.textPrimary,
   },
   radarCard: {
-    backgroundColor: Colors.card,
+    backgroundColor: Colors.surface,
     borderRadius: 24,
     padding: 24,
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: Colors.border,
-    alignItems: 'center',
+    marginBottom: 16,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 10,
+    elevation: 4,
   },
   radarOuterRing: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.2)',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: Colors.surfaceSage,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   radarMiddleRing: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.35)',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: Colors.primaryXPale,
     justifyContent: 'center',
     alignItems: 'center',
   },
   radarCore: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.cardElevated,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.surface,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: Colors.cardShadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   activeWpName: {
     color: Colors.textPrimary,
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: 4,
   },
   radiusRuleText: {
-    color: Colors.textSecondary,
+    color: Colors.textMuted,
     fontSize: 12,
+    textAlign: 'center',
     marginBottom: 12,
   },
   coordsBox: {
-    backgroundColor: Colors.inputBg,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: Colors.surfaceSage,
     borderRadius: 10,
-    marginBottom: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 16,
   },
   coordsText: {
     color: Colors.textMuted,
     fontSize: 11,
     fontFamily: 'monospace',
+  },
+  alreadyDoneBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.primaryXPale,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  alreadyDoneText: {
+    color: Colors.primary,
+    fontSize: 13,
+    fontWeight: '700',
   },
   checkinActionBtn: {
     width: '100%',
@@ -521,148 +572,175 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   checkinBtnGradient: {
-    height: 52,
-    flexDirection: 'row',
+    paddingVertical: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  btnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  btnLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   checkinBtnText: {
-    color: '#090D16',
+    color: '#fff',
     fontSize: 15,
     fontWeight: '800',
   },
-  alreadyDoneBox: {
+  checklistCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  checklistTitle: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  checklistItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.borderLight,
+  },
+  checklistLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 14,
-    gap: 8,
+    gap: 10,
+    flex: 1,
   },
-  alreadyDoneText: {
-    color: Colors.primary,
+  clWpName: {
+    color: Colors.textSecondary,
     fontSize: 13,
+    fontWeight: '600',
+  },
+  clWpNameDone: {
+    color: Colors.textPrimary,
     fontWeight: '700',
+  },
+  clVoucherHint: {
+    color: Colors.amber,
+    fontSize: 11,
+    marginTop: 2,
+  },
+  clBadgeDone: {
+    backgroundColor: Colors.amberLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  clBadgeDoneText: {
+    color: Colors.amber,
+    fontSize: 10,
+    fontWeight: '800',
   },
   modalOverlay: {
     flex: 1,
     backgroundColor: Colors.overlay,
     justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
   },
-  unlockModalCard: {
-    backgroundColor: Colors.card,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: Colors.borderActive,
+  modalCard: {
+    width: '100%',
     maxHeight: '85%',
+    backgroundColor: Colors.surface,
+    borderRadius: 28,
+    overflow: 'hidden',
   },
-  unlockModalHeader: {
+  modalHeaderGrad: {
+    padding: 24,
     alignItems: 'center',
-    paddingBottom: 16,
   },
-  trophyIcon: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: 'rgba(16, 185, 129, 0.15)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  unlockTitle: {
-    color: Colors.textPrimary,
-    fontSize: 20,
+  modalSuccessTitle: {
+    color: '#fff',
+    fontSize: 18,
     fontWeight: '900',
+    marginTop: 8,
   },
-  unlockSub: {
-    color: Colors.primaryLight,
-    fontSize: 14,
-    fontWeight: '700',
+  modalDistance: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
     marginTop: 2,
   },
-  unlockBody: {
-    marginVertical: 12,
-  },
-  storyBox: {
-    backgroundColor: Colors.cardElevated,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
+  modalBody: {
+    padding: 20,
   },
   storyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    color: Colors.textPrimary,
+    fontSize: 14,
+    fontWeight: '800',
     marginBottom: 6,
   },
-  storyHeaderTitle: {
-    color: Colors.primaryLight,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  storyBodyText: {
+  storyText: {
     color: Colors.textSecondary,
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 20,
+    marginBottom: 16,
   },
   voucherBox: {
-    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    backgroundColor: Colors.amberLight,
     borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(245, 158, 11, 0.25)',
+    padding: 16,
+    borderWidth: 1.5,
+    borderColor: Colors.amber + '44',
+    marginBottom: 10,
   },
-  voucherHeader: {
+  voucherTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
+    gap: 8,
+    marginBottom: 6,
   },
-  voucherHeaderTitle: {
+  voucherTitle: {
     color: Colors.amber,
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '800',
   },
-  voucherDescText: {
+  voucherDesc: {
     color: Colors.textPrimary,
-    fontSize: 12,
+    fontSize: 13,
+    fontWeight: '600',
     marginBottom: 10,
   },
   voucherCodeContainer: {
-    backgroundColor: Colors.inputBg,
+    backgroundColor: Colors.surface,
     borderRadius: 10,
-    padding: 10,
-    alignItems: 'center',
-    borderWidth: 1,
+    paddingVertical: 10,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: Colors.amber,
-  },
-  voucherCodeLabel: {
-    color: Colors.textMuted,
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  voucherCodeVal: {
-    color: Colors.amber,
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: 1.5,
-    marginTop: 2,
-  },
-  closeUnlockBtn: {
-    backgroundColor: Colors.cardElevated,
-    borderRadius: 14,
-    height: 48,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 10,
+    marginBottom: 8,
   },
-  closeUnlockText: {
-    color: Colors.textPrimary,
+  voucherCodeText: {
+    color: Colors.amber,
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 2,
+  },
+  voucherFootnote: {
+    color: Colors.textMuted,
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  modalCloseButton: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  modalCloseText: {
+    color: '#fff',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
   },
 });

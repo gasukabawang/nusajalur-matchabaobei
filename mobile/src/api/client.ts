@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const DEFAULT_API_URL = 'https://boats-similarly-compaq-riverside.trycloudflare.com/api/v1';
+export const DEFAULT_API_URL = 'https://dem-worth-thinks-rain.trycloudflare.com/api/v1';
 export const LOCAL_API_URL = 'http://172.22.33.148:8000/api/v1';
 export const OFFICIAL_PROD_URL = 'https://matchabaobei.stei.fun/api/v1';
 
