@@ -23,6 +23,7 @@ router = APIRouter(prefix="/trails", tags=["Trails & Routes"])
 )
 def get_trails(
     theme: Optional[str] = Query(None, description="Filter tema (e.g. heritage, kuliner, arsitektur, alam)"),
+    city: Optional[str] = Query(None, description="Filter kota (e.g. Bandung, Jakarta)"),
     max_duration_min: Optional[int] = Query(None, description="Durasi maksimum dalam menit"),
     lat: Optional[float] = Query(None, description="Latitude posisi pengguna untuk kalkulasi jarak terdekat (Haversine)"),
     lon: Optional[float] = Query(None, description="Longitude posisi pengguna untuk kalkulasi jarak terdekat (Haversine)"),
@@ -31,11 +32,12 @@ def get_trails(
 ):
     """
     Mengambil daftar rute wisata jalan kaki budaya terukur.
-    Mendukung filter tema, durasi, dan kalkulasi jarak GPS Haversine dari titik awal pengguna.
+    Mendukung filter tema, kota, durasi, dan kalkulasi jarak GPS Haversine dari titik awal pengguna.
     """
     service = TrailService(db)
     return service.list_trails(
         theme=theme,
+        city=city,
         max_duration_min=max_duration_min,
         user_lat=lat,
         user_lon=lon,

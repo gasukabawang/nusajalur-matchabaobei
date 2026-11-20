@@ -32,16 +32,25 @@ def test_suite():
     res = client.get("/api/v1/trails", headers=headers)
     assert res.status_code == 200
     trails_data = res.json()
-    assert trails_data["total"] >= 6
-    print(f"[PASS] 3. GET /api/v1/trails -> 200 OK (Total {trails_data['total']} trails retrieved)")
+    assert trails_data["total"] >= 11
+    print(f"[PASS] 3. GET /api/v1/trails -> 200 OK (Total {trails_data['total']} trails retrieved across Bandung & Jakarta)")
 
-    # 3b. GET /api/v1/trails with filter & lat/lon
-    res = client.get("/api/v1/trails?theme=heritage&lat=-6.921132&lon=107.609653", headers=headers)
+    # 3b. GET /api/v1/trails with filter & lat/lon (Bandung)
+    res = client.get("/api/v1/trails?city=Bandung&theme=heritage&lat=-6.921132&lon=107.609653", headers=headers)
     assert res.status_code == 200
     filtered_trails = res.json()
     first_trail = filtered_trails["trails"][0]
     assert first_trail["distance_from_user_km"] is not None
-    print(f"[PASS] 3b. GET /api/v1/trails (filter & Haversine) -> nearest trail distance: {first_trail['distance_from_user_km']} km")
+    assert first_trail["city"] == "Bandung"
+    print(f"[PASS] 3b. GET /api/v1/trails (filter city=Bandung & Haversine) -> nearest: {first_trail['title']} ({first_trail['distance_from_user_km']} km)")
+
+    # 3c. GET /api/v1/trails with filter city=Jakarta
+    res = client.get("/api/v1/trails?city=Jakarta&lat=-6.1352&lon=106.8133", headers=headers)
+    assert res.status_code == 200
+    jkt_trails = res.json()
+    assert jkt_trails["total"] >= 5
+    assert jkt_trails["trails"][0]["city"] == "Jakarta"
+    print(f"[PASS] 3c. GET /api/v1/trails (filter city=Jakarta) -> {jkt_trails['total']} Jakarta trails found")
 
     # 4. GET /api/v1/trails/{trail_id}
     trail_id = "trail-braga-heritage"
@@ -117,7 +126,17 @@ def test_suite():
     assert res.status_code == 200
     nearby = res.json()
     assert nearby["total_found"] > 0
-    print(f"[PASS] 9. GET /api/v1/public/destinations-nearby -> 200 OK ({nearby['total_found']} nearby points found)")
+    print(f"[PASS] 9. GET /api/v1/public/destinations-nearby (Bandung) -> 200 OK ({nearby['total_found']} nearby points found)")
+
+    # 9b. GET /api/v1/public/destinations-nearby (Jakarta Kota Tua)
+    res_jkt = client.get(
+        "/api/v1/public/destinations-nearby?lat=-6.1352&lon=106.8133&radius_m=1500",
+        headers={"X-API-Key": b2b_key},
+    )
+    assert res_jkt.status_code == 200
+    nearby_jkt = res_jkt.json()
+    assert nearby_jkt["total_found"] > 0
+    print(f"[PASS] 9b. GET /api/v1/public/destinations-nearby (Jakarta Kota Tua) -> 200 OK ({nearby_jkt['total_found']} nearby points found)")
 
     # 10. GET /api/v1/public/measured-trails (X-API-Key)
     res = client.get(

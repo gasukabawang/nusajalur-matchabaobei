@@ -164,7 +164,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           <Text style={styles.cardTitle} numberOfLines={1}>{item.title}</Text>
           <View style={styles.locationRow}>
             <Ionicons name="location-outline" size={12} color={Colors.textMuted} />
-            <Text style={styles.locationText}>{t.home.bandung}</Text>
+            <Text style={styles.locationText}>
+              {item.city === 'Jakarta' ? 'Jakarta, DKI Jakarta' : t.home.bandung}
+            </Text>
           </View>
           <Text style={styles.cardDesc} numberOfLines={2}>{item.description}</Text>
 

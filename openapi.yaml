@@ -96,8 +96,8 @@ paths:
       summary: Daftar Rute Jalan Kaki Budaya & Kebugaran
       description: 'Mengambil daftar rute wisata jalan kaki budaya terukur.
 
-        Mendukung filter tema, durasi, dan kalkulasi jarak GPS Haversine dari titik
-        awal pengguna.'
+        Mendukung filter tema, kota, durasi, dan kalkulasi jarak GPS Haversine dari
+        titik awal pengguna.'
       operationId: get_trails_api_v1_trails_get
       security:
       - HTTPBearer: []
@@ -112,6 +112,16 @@ paths:
           description: Filter tema (e.g. heritage, kuliner, arsitektur, alam)
           title: Theme
         description: Filter tema (e.g. heritage, kuliner, arsitektur, alam)
+      - name: city
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          description: Filter kota (e.g. Bandung, Jakarta)
+          title: City
+        description: Filter kota (e.g. Bandung, Jakarta)
       - name: max_duration_min
         in: query
         required: false

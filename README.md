@@ -8,7 +8,7 @@
 ## 📑 Daftar Isi
 
 1. [Gambaran Proyek](#gambaran-proyek)
-2. [Arsitektur Container](#arsitektur-container)
+2. [Arsitektur Container & Infrastruktur STB](#arsitektur-container--infrastruktur-stb)
 3. [Struktur Direktori](#struktur-direktori)
 4. [Prasyarat](#prasyarat)
 5. [Cara Menjalankan (Lokal)](#cara-menjalankan-lokal)
@@ -18,84 +18,80 @@
 9. [Cara Mendapatkan API Key (B2B)](#cara-mendapatkan-api-key-b2b)
 10. [Panduan Aplikasi Mobile (Expo)](#panduan-aplikasi-mobile-expo)
 11. [Kredensial Demo](#kredensial-demo)
-12. [Lisensi](#lisensi)
+12. [Daftar Lengkap Rute Budaya (Bandung & Jakarta)](#daftar-lengkap-rute-budaya-bandung--jakarta)
+13. [Lisensi](#lisensi)
 
 ---
 
 ## Gambaran Proyek
 
-**NusaJalur** adalah platform wisata jalan kaki budaya-kebugaran yang menghubungkan wisatawan dengan rute-rute bersejarah di Kota Bandung, dilengkapi fitur GPS check-in, cerita sejarah interaktif, dan komisi UMKM lokal.
+**NusaJalur** adalah platform wisata jalan kaki budaya-kebugaran terintegrasi yang menghubungkan penjelajah urban dengan rute-rute bersejarah terkurasi di **Kota Bandung** dan **DKI Jakarta**. Dilengkapi dengan verifikasi GPS check-in (geofencing), pembukaan narasi cerita sejarah interaktif, voucher promo UMKM lokal, serta skema transparansi bagi hasil digital pass (70% voucher UMKM, 15% kurator lokal, 15% platform).
 
 ### Stack Teknologi
 
 | Komponen | Teknologi |
 |----------|-----------|
-| Backend API | FastAPI (Python 3.11) |
-| Database | SQLite (WAL mode) |
-| Auth Mobile | JWT Bearer Token (bcrypt) |
-| Auth B2B | X-API-Key (SHA-256 hash) |
-| Reverse Proxy | Nginx 1.28-alpine |
-| Tunnel | Cloudflare Tunnel |
-| Mobile App | React Native / Expo SDK 58 |
-| Container | Docker Compose (linux/arm64) |
+| Backend API | FastAPI (Python 3.11 / Python 3.13) |
+| Database | SQLite (WAL mode, Thread-Safe, Zero-Overhead) |
+| Auth Mobile | JWT Bearer Token (bcrypt password hash) |
+| Auth B2B Integrasi | X-API-Key (SHA-256 hash storage) |
+| Reverse Proxy (Host) | Nginx Host (Port 80) di STB HG680P |
+| Reverse Proxy (Docker) | Nginx 1.28-alpine (`gateway`, Port 8090:80) |
+| Tunnel | Cloudflare Tunnel (`cloudflared` systemd service di host STB) |
+| Storage Docker | `/mnt/usb/docker` (External USB Data-Root) |
+| Mobile App | React Native / Expo SDK 58 (TypeScript, i18n ID/EN) |
+| Target Arsitektur | `linux/arm64` (STB HG680P 2GB RAM Armbian) |
 
 ---
 
-## Arsitektur Container
+## Arsitektur Container & Infrastruktur STB
+
+Infrastruktur NusaJalur dioptimalkan khusus untuk perangkat berdaya rendah **STB Fiberhome HG680P (Quad-Core ARM Cortex-A53, RAM 2GB, OS Armbian Linux)**.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    STB HG680P (Armbian ARM64)                   │
-│                                                                 │
-│  ┌─────────────┐    ┌──────────────────┐    ┌───────────────┐  │
-│  │   tunnel    │    │     gateway       │    │ core-service  │  │
-│  │ cloudflared │───▶│  nginx:1.28-alp  │───▶│  FastAPI +    │  │
-│  │  mem: 64m   │    │   mem: 64m        │    │  SQLite WAL   │  │
-│  │  cpus: 0.25 │    │   cpus: 0.25      │    │  mem: 256m    │  │
-│  └─────────────┘    └──────────────────┘    │  cpus: 0.5    │  │
-│         │                   │               └───────────────┘  │
-│         │                   │                       │           │
-│         ▼                   ▼                       ▼           │
-│  TUNNEL_TOKEN         CF-Connecting-IP         nusajalur.db    │
-│  (Cloudflare)         Rate: 60 req/min         (WAL mode)      │
-└─────────────────────────────────────────────────────────────────┘
-         │
-         ▼
-  https://matchabaobei.stei.fun  (Cloudflare CDN)
-         │
-         ▼
-  📱 Mobile App (Expo Go / APK)
+ Internet (Pengguna Mobile / Integrasi B2B)
+                      │
+                      ▼ HTTPS (Port 443)
+       Cloudflare Edge & CDN (SSL, DDoS Protection)
+                      │
+                      ▼ QUIC / HTTP2 Tunnel
+ ┌────────────────────┼────────────────────────────────────────────────────────┐
+ │ STB HG680P Armbian │                                                        │
+ │                    ▼                                                        │
+ │ ┌──────────────────────────────────────┐                                    │
+ │ │ cloudflared.service (Host Service)   │ (TUNNEL_TOKEN systemd)             │
+ │ └──────────────────┬───────────────────┘                                    │
+ │                    ▼ HTTP (Port 80)                                         │
+ │ ┌──────────────────────────────────────┐                                    │
+ │ │ Nginx Host Reverse Proxy (Port 80)   │ (Meneruskan rute /api/*)           │
+ │ └──────────────────┬───────────────────┘                                    │
+ │                    ▼ HTTP (Port 8090)                                       │
+ │ ┌──────────────────┴──────────────────────────────────────────────────────┐ │
+ │ │ Docker Engine (data-root: /mnt/usb/docker pada Flashdisk/SSD Eksternal) │ │
+ │ │                                                                         │ │
+ │ │  ┌─────────────────────────┐               ┌──────────────────────────┐ │ │
+ │ │  │ gateway                 │               │ core-service             │ │ │
+ │ │  │ (nginx:1.28-alpine)     │──────────────▶│ (FastAPI + SQLite WAL)   │ │ │
+ │ │  │ Port: 8090 -> 80        │   HTTP :8000  │ Port: 8000               │ │ │
+ │ │  │ Mem Limit: 64M, CPU: 0.25│              │ Mem Limit: 256M, CPU: 0.5│ │ │
+ │ │  │ - Rate Limit 60 req/min │               │ - 11 Rute Bandung & Jkt  │ │ │
+ │ │  │ - Real-IP: CF-Connecting│               │ - JWT & X-API-Key Auth   │ │ │
+ │ │  │ - JSON Access Log       │               │ - Haversine Geofencing   │ │ │
+ │ │  └─────────────────────────┘               └─────────────┬────────────┘ │ │
+ │ │                                                          │              │ │
+ │ └──────────────────────────────────────────────────────────┼──────────────┘ │
+ │                                                            ▼                │
+ │                           SQLite DB (WAL Mode) : backend/data/nusajalur.db  │
+ └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Detail Container
+### Penjelasan Komponen Produksi:
 
-| Container | Image | mem_limit | cpus | Fungsi |
-|-----------|-------|-----------|------|--------|
-| `core-service` | python:3.11-slim | 256m | 0.5 | FastAPI + SQLite + Uvicorn |
-| `gateway` | nginx:1.28-alpine | 64m | 0.25 | Reverse proxy, CORS, Rate limit 60/min, JSON log |
-| `tunnel` | cloudflare/cloudflared | 64m | 0.25 | Ekspos ke internet via Cloudflare |
-
-### Network Flow
-
-```
-Internet
-  │
-  ▼
-Cloudflare CDN (DDoS Protection)
-  │  HTTPS
-  ▼
-cloudflared tunnel  ──(QUIC)──▶  gateway:80 (Nginx)
-                                     │
-                              Rate limit 60 req/min
-                              Real IP: CF-Connecting-IP
-                              CORS: * (dev) / domain tertentu (prod)
-                                     │
-                                     ▼
-                              core-service:8000 (Uvicorn)
-                                     │
-                                     ▼
-                              SQLite WAL (nusajalur.db)
-```
+1. **Cloudflared Host Service:** Berjalan langsung di host Armbian (`/etc/systemd/system/cloudflared.service`). Meneruskan subdomain resmi `https://matchabaobei.stei.fun` secara spesifik pada path `/api/*` ke port `80` Nginx Host.
+2. **Nginx Host Proxy:** Menerima trafik dari Cloudflare Tunnel pada port 80 dan melakukan proxy pass ke container `gateway` di port `8090`.
+3. **Container `gateway` (Nginx 1.28-alpine):** Menangani CORS headers, proteksi rate-limiting 60 req/menit berbasis header asli `CF-Connecting-IP`, serta rotasi log JSON terstruktur.
+4. **Container `core-service` (FastAPI Python 3.11):** Menjalankan aplikasi microservice, SQLite WAL mode, algoritma off-peak pricing, dan Haversine Geofencing.
+5. **Penyimpanan Eksternal USB (`/mnt/usb/docker`):** Daemon Docker diatur menggunakan direktori `/mnt/usb/docker` via `/etc/docker/daemon.json` untuk menjaga stabilitas penyimpanan internal (eMMC) STB.
 
 ---
 
@@ -105,269 +101,207 @@ cloudflared tunnel  ──(QUIC)──▶  gateway:80 (Nginx)
 NusaJalur-matchabaobei/
 ├── backend/                    # Backend FastAPI microservice
 │   ├── app/
-│   │   ├── main.py             # FastAPI app entry point
-│   │   ├── core/               # Config, security, utils, exceptions
-│   │   ├── domain/             # ORM models + Pydantic schemas
-│   │   ├── infrastructure/     # Database + repositories
-│   │   ├── application/        # Business logic services
-│   │   └── api/v1/endpoints/   # Route handlers
+│   │   ├── main.py             # Inisialisasi FastAPI & Router
+│   │   ├── core/               # Konfigurasi Pydantic, Security, Haversine Utils
+│   │   ├── domain/             # ORM Models (User, Trail, Waypoint, Pass) & DTO Schemas
+│   │   ├── infrastructure/     # Database WAL & Repositories (Trail, Pass, User, ApiKey)
+│   │   ├── application/        # Business Logic Services (Trail, Pricing, Pass, Public)
+│   │   └── api/v1/endpoints/   # Route Controllers (Health, Auth, Trails, Passes, Public)
 │   ├── docker/
-│   │   ├── core/Dockerfile     # ARM64-compatible Python image
-│   │   └── gateway/nginx.conf  # Nginx reverse proxy config
+│   │   ├── core/Dockerfile     # Image Python 3.11-slim kompatibel ARM64 & AMD64
+│   │   └── gateway/nginx.conf  # Konfigurasi reverse proxy Nginx internal
 │   ├── scripts/
-│   │   ├── seed.py             # Seed 6 trail data + demo user + API key
-│   │   ├── export_openapi.py   # Generate openapi.yaml
-│   │   └── test_api.py         # 11 automated API tests
-│   ├── data/                   # SQLite database storage
+│   │   ├── seed.py             # Seeding 11 Rute Bandung & Jakarta + Demo User + API Key
+│   │   ├── export_openapi.py   # Eksportir otomatis skema openapi.yaml
+│   │   └── test_api.py         # Test suite komprehensif (100% PASS)
+│   ├── data/                   # Penyimpanan file nusajalur.db (SQLite)
 │   ├── requirements.txt
 │   ├── docker-compose.yml
-│   ├── .env.example
 │   └── README.md
-├── mobile/                     # React Native / Expo app
+├── mobile/                     # React Native / Expo Mobile App
 │   ├── src/
-│   │   ├── screens/            # AuthScreen, HomeScreen, TrailDetailScreen, ...
-│   │   ├── navigation/         # AppNavigator (Stack + Bottom Tab)
-│   │   ├── context/            # AuthContext, LanguageContext
-│   │   ├── i18n/               # translations.ts (ID + EN)
-│   │   ├── api/                # client.ts + apiService.ts
-│   │   ├── theme/              # colors.ts (Sage Green + Warm Cream)
-│   │   └── types/              # TypeScript interfaces
+│   │   ├── screens/            # AuthScreen, HomeScreen, TrailDetailScreen, CheckinScreen, dll.
+│   │   ├── navigation/         # AppNavigator (Native Stack & Bottom Tabs)
+│   │   ├── context/            # AuthContext & LanguageContext (i18n ID/EN)
+│   │   ├── i18n/               # Kamus translasi dwibahasa
+│   │   ├── api/                # API Client & Services
+│   │   └── theme/              # Warna Sage Green + Warm Cream
 │   ├── App.js
 │   ├── app.json
 │   ├── package.json
 │   └── README.md
-├── docker-compose.yml          # Root docker-compose (alias untuk STB)
-├── openapi.yaml                # OpenAPI 3.0 schema (auto-generated)
-├── .env.example                # Template environment variables
+├── docker-compose.yml          # Compose root STB
+├── openapi.yaml                # Dokumentasi OpenAPI 3.0 statis
+├── .env.example
 ├── .gitignore
-└── README.md                   # File ini
+└── README.md                   # Dokumentasi Utama
 ```
 
 ---
 
 ## Prasyarat
 
-### Backend
-- Python 3.11+ (atau 3.13)
-- pip
-- Docker + Docker Compose (untuk deployment container)
-- cloudflared (untuk tunnel lokal)
-
-### Mobile
-- Node.js 18+ dan npm
-- Expo CLI: `npm install -g expo-cli`
-- Expo Go app di smartphone (Android/iOS)
+- **Python 3.11+** atau **Python 3.13**
+- **Node.js 18+** & npm
+- **Docker & Docker Compose** (dukungan arsitektur `linux/arm64` atau `linux/amd64`)
+- Smartphone dengan aplikasi **Expo Go** (Android / iOS)
 
 ---
 
 ## Cara Menjalankan (Lokal)
 
-### 1. Clone & Setup
+### 1. Backend Service
 
 ```bash
+# Clone repositori
 git clone https://github.com/gasukabawang/nusajalur-matchabaobei.git
 cd nusajalur-matchabaobei
-```
 
-### 2. Setup Backend
-
-```bash
-# Install dependencies
+# Install dependencies backend
 pip install -r backend/requirements.txt
 
-# Buat .env dari template
+# Buat environment file
 cp .env.example .env
-# Edit .env: atur SECRET_KEY dan TUNNEL_TOKEN
 
-# Seed database (6 trail + demo user + API key)
+# Isi data awal (11 rute Bandung & Jakarta, akun demo, API key)
 python backend/scripts/seed.py
 
-# Jalankan server
+# Jalankan server FastAPI
 python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
 ```
 
-Server aktif di: `http://localhost:8000`  
-Swagger UI: `http://localhost:8000/docs`
+* API Base URL Lokal: `http://localhost:8000/api/v1`
+* Dokumentasi Interaktif Swagger UI (Lokal): `http://localhost:8000/docs`
 
-### 3. Tunnel ke Internet (Opsional, untuk test dari HP)
-
-```bash
-cloudflared tunnel --url http://localhost:8000
-# Catat URL trycloudflare.com yang muncul
-```
-
-### 4. Jalankan Mobile App
+### 2. Mobile App (Expo Go)
 
 ```bash
 cd mobile
 npm install
 npx expo start
-# Scan QR code dengan Expo Go
 ```
+* Buka aplikasi **Expo Go** di HP dan scan QR Code yang tampil di terminal.
 
 ---
 
 ## Deploy ke STB Armbian (Produksi)
 
-### 1. Persiapan STB
+### 1. Konfigurasi Docker USB Storage di STB
 
+Untuk menghemat penyimpanan eMMC STB, arahkan `data-root` Docker ke USB Flashdisk:
 ```bash
-# SSH ke STB
-ssh root@<IP_STB>
-
-# Install Docker
-curl -fsSL https://get.docker.com | sh
-systemctl enable docker
-systemctl start docker
-
-# Install Docker Compose
-apt-get install -y docker-compose-plugin
+sudo mkdir -p /mnt/usb/docker
+sudo nano /etc/docker/daemon.json
+```
+Isi konfigurasi berikut:
+```json
+{
+  "data-root": "/mnt/usb/docker",
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+```
+Restart daemon Docker:
+```bash
+sudo systemctl restart docker
 ```
 
-### 2. Upload Project
+### 2. Menjalankan Container NusaJalur
 
+Di dalam folder proyek di STB:
 ```bash
-# Di laptop lokal
-scp -r . root@<IP_STB>:/opt/nusajalur/
-```
-
-### 3. Setup Environment
-
-```bash
-# Di STB
-cd /opt/nusajalur
+# Buat file .env dari template
 cp .env.example .env
 nano .env
-```
 
-Isi `.env`:
-```env
-SECRET_KEY=your-very-long-random-secret-key-min-32-chars
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=10080
-TUNNEL_TOKEN=eyJhIjoiXXXXX...  # Token dari Cloudflare Zero Trust
-API_KEY_HASH=sha256-hash-dari-api-key-anda
-```
-
-> **Cara dapat TUNNEL_TOKEN:**
-> 1. Login ke [dash.cloudflare.com](https://dash.cloudflare.com)
-> 2. Zero Trust → Networks → Tunnels → Create Tunnel
-> 3. Pilih Cloudflared, copy token yang diberikan
-> 4. Set public hostname: `matchabaobei.stei.fun` → `http://gateway:80`
-
-### 4. Seed Database & Build
-
-```bash
-# Seed data pertama kali
+# Jalankan seeding data awal
 docker compose run --rm core-service python /app/scripts/seed.py
 
-# Build & jalankan semua container
+# Ekspor skema OpenAPI terbaru
+docker compose run --rm core-service python /app/scripts/export_openapi.py
+
+# Jalankan seluruh container di background
 docker compose up -d --build
-
-# Cek status
-docker compose ps
-docker compose logs -f
 ```
 
-### 5. Verifikasi
+### 3. Konfigurasi Nginx Host & Cloudflared di STB
 
-```bash
-# Health check
-curl https://matchabaobei.stei.fun/api/v1/health
+Konfigurasi Nginx Host (`/etc/nginx/sites-available/matchabaobei`):
+```nginx
+server {
+    listen 80;
+    server_name matchabaobei.stei.fun;
 
-# Expected response:
-# {"status":"ok","version":"1.0.0","timestamp":"..."}
+    location /api/ {
+        proxy_pass http://127.0.0.1:8090/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header CF-Connecting-IP $http_cf_connecting_ip;
+    }
+
+    location / {
+        return 404 "Hanya rute /api/* yang diekspos ke publik.";
+    }
+}
 ```
 
-### 6. Perintah Maintenance
-
+Jalankan Cloudflared service sebagai systemd:
 ```bash
-# Restart layanan
-docker compose restart
-
-# Lihat log real-time
-docker compose logs -f core-service
-
-# Update kode
-git pull origin main
-docker compose up -d --build core-service
-
-# Backup database
-cp backend/data/nusajalur.db backup/nusajalur_$(date +%Y%m%d).db
+sudo systemctl enable cloudflared
+sudo systemctl restart cloudflared
 ```
 
 ---
 
 ## Daftar Endpoint API
 
-### Publik (tanpa auth)
+Semua endpoint berawalan prefix: `/api/v1`
 
-| Method | Endpoint | Deskripsi |
-|--------|----------|-----------|
-| `GET` | `/api/v1/health` | Health check |
-| `POST` | `/api/v1/auth/register` | Registrasi user baru |
-| `POST` | `/api/v1/auth/login` | Login, mendapat JWT |
+### 1. Endpoint Publik
 
-### Butuh JWT Bearer Token
+| Method | Endpoint | Deskripsi | Autentikasi |
+|--------|----------|-----------|-------------|
+| `GET` | `/health` | Memeriksa status kesehatan server | Tanpa Auth |
+| `POST` | `/auth/register` | Mendaftarkan pengguna baru mobile | Tanpa Auth |
+| `POST` | `/auth/login` | Autentikasi pengguna & penerbitan JWT | Tanpa Auth |
 
-| Method | Endpoint | Deskripsi |
-|--------|----------|-----------|
-| `GET` | `/api/v1/trails` | Daftar rute (filter: theme, max_duration_min, lat, lon) |
-| `GET` | `/api/v1/trails/{trail_id}` | Detail rute + waypoints |
-| `GET` | `/api/v1/trails/{trail_id}/pricing` | Harga dinamis (off-peak discount) |
-| `POST` | `/api/v1/passes` | Beli Trail Pass |
-| `POST` | `/api/v1/passes/{pass_id}/checkins` | GPS Check-in |
-| `GET` | `/api/v1/users/me/trips` | Riwayat perjalanan user |
+### 2. Endpoint Mobile Pengguna (JWT Bearer Token)
 
-### B2B — Butuh X-API-Key Header
+| Method | Endpoint | Deskripsi | Autentikasi |
+|--------|----------|-----------|-------------|
+| `GET` | `/trails` | Daftar rute jalan budaya (filter: `city`, `theme`, `max_duration_min`, `lat`, `lon`) | `Bearer <JWT>` |
+| `GET` | `/trails/{trail_id}` | Detail rute beserta titik waypoints dan radius GPS | `Bearer <JWT>` |
+| `GET` | `/trails/{trail_id}/pricing` | Perhitungan harga dinamis (diskon 20% off-peak pagi) | `Bearer <JWT>` |
+| `POST` | `/passes` | Pembelian Digital Trail Pass (simulasi lunas & pembagian alokasi komisi) | `Bearer <JWT>` |
+| `POST` | `/passes/{pass_id}/checkins` | Verifikasi GPS Check-in pos wisata, unlock cerita & voucher | `Bearer <JWT>` |
+| `GET` | `/users/me/trips` | Riwayat pembelian tiket pass & statistik langkah/kalori pengguna | `Bearer <JWT>` |
 
-| Method | Endpoint | Deskripsi |
-|--------|----------|-----------|
-| `GET` | `/api/v1/public/destinations-nearby` | Pos wisata terdekat (lat, lon, radius_m) |
-| `GET` | `/api/v1/public/measured-trails` | Rute budaya terukur (min_kcal, max_kcal) |
+### 3. Endpoint Integrasi B2B Server-to-Server (`X-API-Key`)
+
+| Method | Endpoint | Deskripsi | Autentikasi |
+|--------|----------|-----------|-------------|
+| `GET` | `/public/destinations-nearby` | Titik wisata & UMKM terdekat berdasarkan radius meter (`lat`, `lon`, `radius_m`) | Header `X-API-Key` |
+| `GET` | `/public/measured-trails` | Rute jalan budaya terukur untuk kelompok kesehatan (`min_kcal`, `max_kcal`) | Header `X-API-Key` |
 
 ---
 
 ## Contoh Request & Response (curl)
 
-### Health Check
-
+### 1. Health Check
 ```bash
-curl https://matchabaobei.stei.fun/api/v1/health
+curl -X GET https://matchabaobei.stei.fun/api/v1/health
 ```
 ```json
 {
-  "status": "ok",
-  "version": "1.0.0",
-  "timestamp": "2026-11-19T08:00:00.000Z"
+  "status": "ok"
 }
 ```
 
-### Registrasi
-
-```bash
-curl -X POST https://matchabaobei.stei.fun/api/v1/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "mypassword123",
-    "full_name": "Budi Santoso"
-  }'
-```
-```json
-{
-  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "token_type": "bearer",
-  "user": {
-    "id": "usr-xxxxxxxx",
-    "email": "user@example.com",
-    "full_name": "Budi Santoso"
-  }
-}
-```
-
-### Login
-
+### 2. Login Akun Demo
 ```bash
 curl -X POST https://matchabaobei.stei.fun/api/v1/auth/login \
   -H "Content-Type: application/json" \
@@ -383,223 +317,200 @@ curl -X POST https://matchabaobei.stei.fun/api/v1/auth/login \
   "user": {
     "id": "usr-demo-nusajalur-2026",
     "email": "demo@nusajalur.id",
-    "full_name": "Demo NusaJalur"
+    "full_name": "Penjelajah Bandung (Demo Akun)"
   }
 }
 ```
 
-### Daftar Trail (dengan filter)
-
+### 3. Mengambil Daftar Rute Jakarta (dengan Filter Kota & Koordinat)
 ```bash
-# Set token dulu
-TOKEN="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-
-# Semua trail
-curl https://matchabaobei.stei.fun/api/v1/trails \
-  -H "Authorization: Bearer $TOKEN"
-
-# Filter tema heritage, urutkan berdasarkan jarak dari Alun-Alun Bandung
-curl "https://matchabaobei.stei.fun/api/v1/trails?theme=heritage&lat=-6.9218&lon=107.6070" \
-  -H "Authorization: Bearer $TOKEN"
+curl -X GET "https://matchabaobei.stei.fun/api/v1/trails?city=Jakarta&lat=-6.1352&lon=106.8133" \
+  -H "Authorization: Bearer <TOKEN_JWT>"
 ```
 ```json
 {
+  "total": 5,
   "trails": [
     {
-      "id": "trail-001",
-      "title": "Rute Braga Heritage Walk",
+      "id": "trail-jkt-kotatua-sundakelapa",
+      "title": "Jejak Sejarah Kota Tua & Pelabuhan Sunda Kelapa",
+      "slug": "kota-tua-sunda-kelapa-heritage",
       "theme": "heritage",
-      "description": "Telusuri kejayaan arsitektur kolonial Belanda...",
-      "distance_km": 2.4,
-      "est_duration_min": 55,
-      "est_steps": 3200,
-      "est_kcal": 112,
+      "description": "Menyusuri jantung Oud Batavia dari Museum Fatahillah, Jembatan Kota Intan tertua, hingga pelabuhan kayu pinisi legendaris Sunda Kelapa.",
+      "city": "Jakarta",
+      "distance_km": 3.8,
+      "est_duration_min": 65,
+      "est_steps": 5100,
+      "est_kcal": 245,
       "price_idr": 25000,
-      "distance_from_user_km": 0.8,
+      "difficulty": "Sedang",
+      "distance_from_user_km": 0.0,
       "curator": {
-        "name": "Pak Hendra Gunawan",
-        "badge": "Sejarawan Kota Bandung",
-        "avatar_url": "https://i.pravatar.cc/150?u=hendra"
+        "id": "cur-bambang-jakarta",
+        "name": "Bang Bambang Batavia",
+        "bio": "Peneliti sejarah maritim Sunda Kelapa dan cagar budaya Kota Tua Jakarta.",
+        "avatar_url": "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150",
+        "badge": "Kurator Batavia Heritage Walk"
       }
-    }
-  ],
-  "total": 6
-}
-```
-
-### Detail Trail + Waypoints
-
-```bash
-curl https://matchabaobei.stei.fun/api/v1/trails/trail-001 \
-  -H "Authorization: Bearer $TOKEN"
-```
-```json
-{
-  "id": "trail-001",
-  "title": "Rute Braga Heritage Walk",
-  "waypoints": [
-    {
-      "id": "wp-001-01",
-      "sequence": 1,
-      "name": "Gedung Merdeka",
-      "description": "Lokasi Konferensi Asia-Afrika 1955...",
-      "lat": -6.9211,
-      "lon": 107.6097,
-      "radius_m": 100,
-      "story_text": null,
-      "voucher_code": null
     }
   ]
 }
 ```
 
-### Pricing Dinamis
-
+### 4. Mengambil Daftar Rute Bandung (Filter Tema Heritage)
 ```bash
-curl https://matchabaobei.stei.fun/api/v1/trails/trail-001/pricing \
-  -H "Authorization: Bearer $TOKEN"
+curl -X GET "https://matchabaobei.stei.fun/api/v1/trails?city=Bandung&theme=heritage&lat=-6.921132&lon=107.609653" \
+  -H "Authorization: Bearer <TOKEN_JWT>"
 ```
 ```json
 {
-  "trail_id": "trail-001",
-  "base_price_idr": 25000,
+  "total": 2,
+  "trails": [
+    {
+      "id": "trail-braga-heritage",
+      "title": "Jelajah Kolonial & Art Deco Braga - Asia Afrika",
+      "slug": "braga-heritage-art-deco",
+      "theme": "heritage",
+      "city": "Bandung",
+      "distance_km": 2.4,
+      "est_duration_min": 45,
+      "est_steps": 3200,
+      "est_kcal": 160,
+      "price_idr": 25000,
+      "difficulty": "Mudah",
+      "distance_from_user_km": 0.0,
+      "curator": {
+        "id": "cur-ridwan-heritage",
+        "name": "Kang Ridwan Budaya",
+        "badge": "Kurator Utama Bandung Heritage"
+      }
+    }
+  ]
+}
+```
+
+### 5. Simulasi Harga Dinamis (Off-Peak Pagi Diskon 20%)
+```bash
+curl -X GET "https://matchabaobei.stei.fun/api/v1/trails/trail-braga-heritage/pricing?visit_time=07:00" \
+  -H "Authorization: Bearer <TOKEN_JWT>"
+```
+```json
+{
+  "trail_id": "trail-braga-heritage",
+  "visit_time": "07:00",
+  "base_trail_price_idr": 25000,
+  "num_waypoints": 4,
+  "waypoint_subtotal_idr": 20000,
   "is_off_peak": true,
   "discount_percent": 20,
-  "final_price_idr": 20000,
-  "off_peak_window": "05:00-08:30 WIB",
-  "waypoint_count": 3
+  "discount_amount_idr": 9000,
+  "final_price_idr": 36000
 }
 ```
 
-### Beli Trail Pass
-
+### 6. Pembelian Digital Trail Pass
 ```bash
 curl -X POST https://matchabaobei.stei.fun/api/v1/passes \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"trail_id": "trail-001"}'
-```
-```json
-{
-  "id": "pass-xxxxxxxx",
-  "trail_id": "trail-001",
-  "trail_title": "Rute Braga Heritage Walk",
-  "status": "ACTIVE",
-  "amount_paid_idr": 20000,
-  "commission": {
-    "umkm_idr": 14000,
-    "curator_idr": 3000,
-    "platform_idr": 3000
-  },
-  "purchase_date": "2026-11-19T05:30:00Z"
-}
-```
-
-### GPS Check-in
-
-```bash
-curl -X POST https://matchabaobei.stei.fun/api/v1/passes/pass-xxxxxxxx/checkins \
-  -H "Authorization: Bearer $TOKEN" \
+  -H "Authorization: Bearer <TOKEN_JWT>" \
   -H "Content-Type: application/json" \
   -d '{
-    "waypoint_id": "wp-001-01",
-    "lat": -6.9211,
-    "lon": 107.6097
+    "trail_id": "trail-braga-heritage",
+    "visit_time": "07:00"
   }'
 ```
 ```json
 {
-  "success": true,
-  "distance_m": 12.5,
-  "waypoint": {
-    "name": "Gedung Merdeka",
-    "story_text": "Gedung ini dibangun pada 1879 oleh arsitek Belanda Van Galen Last...",
-    "voucher_code": "BRAGA-GM-2026",
-    "voucher_description": "Diskon 15% di Toko Batik Braga"
-  }
+  "id": "pass-768a4115-ff5d-4589-9ba7-7098e6c71c0a",
+  "user_id": "usr-demo-nusajalur-2026",
+  "trail_id": "trail-braga-heritage",
+  "trail_title": "Jelajah Kolonial & Art Deco Braga - Asia Afrika",
+  "status": "ACTIVE",
+  "purchase_date": "2026-11-20T15:30:00Z",
+  "visit_time": "07:00",
+  "final_price_idr": 36000,
+  "umkm_share_idr": 25200,
+  "curator_royalty_idr": 5400,
+  "platform_fee_idr": 5400
 }
 ```
 
-### Riwayat Perjalanan
-
+### 7. Verifikasi GPS Check-in Pos Wisata
 ```bash
-curl https://matchabaobei.stei.fun/api/v1/users/me/trips \
-  -H "Authorization: Bearer $TOKEN"
+curl -X POST https://matchabaobei.stei.fun/api/v1/passes/pass-768a4115-ff5d-4589-9ba7-7098e6c71c0a/checkins \
+  -H "Authorization: Bearer <TOKEN_JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "waypoint_id": "wp-braga-01",
+    "lat": -6.921132,
+    "lon": 107.609653
+  }'
 ```
 ```json
 {
-  "total_passes_purchased": 2,
-  "total_completed_trips": 1,
-  "total_steps_achieved": 7400,
-  "total_kcal_burned": 338,
-  "passes": [
+  "checkin_id": "chk-9c98544d-d79e-4df7-975f-25656bb0e0ab",
+  "waypoint_id": "wp-braga-01",
+  "waypoint_name": "Gedung Merdeka & Museum KAA",
+  "distance_m": 0.0,
+  "verified": true,
+  "checked_in_at": "2026-11-20T15:35:00Z",
+  "story_text": "Di gedung megah inilah pada April 1955, para pemimpin dari 29 negara Asia dan Afrika bersatu mengikrarkan Dasa Sila Bandung. Arsitektur neo-klasik berpadu art-deco ini dirancang oleh arsitek terkemuka Van Galen Last dan C.P. Wolff Schoemaker.",
+  "umkm_name": "Toko Roti Sumber Hidangan (1929)",
+  "voucher_code": "ROTIHERITAGE10",
+  "voucher_description": "Potongan harga 10% untuk pembelian aneka kue kering dan es krim autentik era kolonial."
+}
+```
+
+### 8. Integrasi B2B: Destinasi Terdekat di Jakarta (X-API-Key)
+```bash
+curl -X GET "https://matchabaobei.stei.fun/api/v1/public/destinations-nearby?lat=-6.1352&lon=106.8133&radius_m=1500" \
+  -H "X-API-Key: nj_live_matchabaobei_tst2026_secret_key"
+```
+```json
+{
+  "total_found": 3,
+  "query_lat": -6.1352,
+  "query_lon": 106.8133,
+  "search_radius_m": 1500.0,
+  "destinations": [
     {
-      "id": "pass-xxxxxxxx",
-      "trail_title": "Rute Braga Heritage Walk",
-      "status": "ACTIVE",
-      "checked_in_count": 1,
-      "total_waypoints": 3,
-      "completion_percentage": 33
+      "waypoint_id": "wp-jkt-kt-01",
+      "name": "Taman Fatahillah & Museum Sejarah Jakarta",
+      "category": "heritage",
+      "lat": -6.1352,
+      "lon": 106.8133,
+      "distance_m": 0.0,
+      "radius_m": 50,
+      "trail_title": "Jejak Sejarah Kota Tua & Pelabuhan Sunda Kelapa",
+      "umkm_name": "Cafe Batavia 1805",
+      "promo_teaser": "Diskon 15% Menu Kopi Rempah Batavia & Poffertjes"
     }
   ]
 }
 ```
 
-### B2B — Destinasi Terdekat
-
+### 9. Integrasi B2B: Rute Terukur untuk Kebugaran (X-API-Key)
 ```bash
-curl "https://matchabaobei.stei.fun/api/v1/public/destinations-nearby?lat=-6.9218&lon=107.6070&radius_m=1500" \
+curl -X GET "https://matchabaobei.stei.fun/api/v1/public/measured-trails?min_kcal=150&max_kcal=260" \
   -H "X-API-Key: nj_live_matchabaobei_tst2026_secret_key"
 ```
 ```json
 {
-  "destinations": [
-    {
-      "waypoint_id": "wp-001-01",
-      "name": "Gedung Merdeka",
-      "trail_title": "Rute Braga Heritage Walk",
-      "lat": -6.9211,
-      "lon": 107.6097,
-      "distance_km": 0.08,
-      "has_umkm": true,
-      "voucher_description": "Diskon 15% di Toko Batik Braga"
-    }
-  ],
-  "count": 5
-}
-```
-
-### B2B — Trail Budaya Terukur
-
-```bash
-curl "https://matchabaobei.stei.fun/api/v1/public/measured-trails?min_kcal=100&max_kcal=300" \
-  -H "X-API-Key: nj_live_matchabaobei_tst2026_secret_key"
-```
-```json
-{
+  "total_trails": 8,
+  "min_kcal_filter": 150,
+  "max_kcal_filter": 260,
   "trails": [
     {
-      "id": "trail-001",
-      "title": "Rute Braga Heritage Walk",
-      "distance_km": 2.4,
-      "est_kcal": 112,
-      "est_steps": 3200,
-      "est_duration_min": 55,
+      "trail_id": "trail-jkt-kotatua-sundakelapa",
+      "title": "Jejak Sejarah Kota Tua & Pelabuhan Sunda Kelapa",
+      "distance_km": 3.8,
+      "est_duration_min": 65,
+      "est_steps": 5100,
+      "est_kcal": 245,
+      "num_waypoints": 3,
+      "city": "Jakarta",
       "theme": "heritage"
     }
-  ],
-  "count": 4
-}
-```
-
-### Format Error Standar
-
-```json
-{
-  "error": {
-    "code": "INVALID_CREDENTIALS",
-    "message": "Email atau password tidak valid."
-  }
+  ]
 }
 ```
 
@@ -607,124 +518,96 @@ curl "https://matchabaobei.stei.fun/api/v1/public/measured-trails?min_kcal=100&m
 
 ## Cara Mendapatkan API Key (B2B)
 
-API Key untuk akses server-ke-server (`/api/v1/public/*`) digunakan oleh kelompok lain (TST Integration).
+API Key ditujukan khusus untuk integrasi server-to-server antar kelompok (seperti Kelompok Health & Wellbeing / Belva).
 
-### API Key Demo (Langsung Pakai)
-
-```
-X-API-Key: nj_live_matchabaobei_tst2026_secret_key
-```
-
-> ⚠️ Hanya untuk testing. Untuk produksi, hubungi tim NusaJalur untuk mendapat key khusus.
-
-### Cara Request API Key Baru
-
-1. Hubungi tim NusaJalur via email/Discord kelompok
-2. Sertakan: nama kelompok, subdomain, endpoint yang dibutuhkan
-3. API Key akan di-hash SHA-256 dan disimpan di database server
-4. Gunakan plain-text key di header `X-API-Key`
-
-### Contoh Integrasi (kelompok lain)
-
-```python
-import requests
-
-API_KEY = "nj_live_matchabaobei_tst2026_secret_key"
-BASE_URL = "https://matchabaobei.stei.fun/api/v1"
-
-# Ambil trail budaya terukur untuk integrasi Health & Wellbeing
-response = requests.get(
-    f"{BASE_URL}/public/measured-trails",
-    params={"min_kcal": 100, "max_kcal": 400},
-    headers={"X-API-Key": API_KEY}
-)
-trails = response.json()["trails"]
-```
+* **Header Wajib:** `X-API-Key: <TOKEN_API_KEY>`
+* **API Key Pengujian Resmi:**
+  ```
+  nj_live_matchabaobei_tst2026_secret_key
+  ```
+* Nilai hash SHA-256 yang tersimpan di database:
+  ```
+  cda4bf67fc84886d15572c76508d74ad5feffb6f56bfc2966bb837fa55375b19
+  ```
 
 ---
 
 ## Panduan Aplikasi Mobile (Expo)
 
-### Instalasi & Jalankan
+Aplikasi mobile NusaJalur dibangun menggunakan framework **Expo (React Native)** dengan tema modern *Nature Sage & Warm Cream*, dilengkapi navigasi cerdas, radar GPS simulasi, dan selector dwibahasa (ID/EN).
 
-```bash
-# 1. Clone repo
-git clone https://github.com/gasukabawang/nusajalur-matchabaobei.git
-cd nusajalur-matchabaobei/mobile
-
-# 2. Install dependencies
-npm install
-
-# 3. Jalankan Metro bundler
-npx expo start
-
-# 4. Scan QR Code dengan Expo Go
-#    - Android: Expo Go app → Scan QR
-#    - iOS: Camera app → Scan QR → Open in Expo Go
-```
-
-### Konfigurasi Server di Aplikasi
-
-Saat pertama buka, aplikasi default menggunakan:
-- **Cloudflare Tunnel** (Dev): URL `trycloudflare.com` yang bisa berubah
-- **Produksi (STB)**: `https://matchabaobei.stei.fun/api/v1` ← **Gunakan ini untuk demo**
-
-Untuk ganti server:
-1. Buka tab **Profil** di aplikasi
-2. Ketuk **Konfigurasi Server** → **expand**
-3. Pilih preset (Dev/LAN/Prod) atau masukkan URL custom
-4. Ketuk **Terapkan**
-
-### Fitur Aplikasi
-
-| Screen | Fitur |
-|--------|-------|
-| **Auth** | Login/Register JWT, Demo 1-klik, pilih server |
-| **Jelajahi** | Katalog 6 trail Bandung, filter tema, GPS terdekat |
-| **Detail Trail** | Waypoints GPS, harga dinamis, beli Trail Pass |
-| **Check-in** | Radar GPS, simulasi mode, unlock cerita & voucher |
-| **Pass Saya** | Progres per-trail, checklist waypoint, voucher UMKM |
-| **Profil** | Statistik perjalanan, ganti bahasa (ID/EN), ganti server |
-
-### Multi-Bahasa
-
-Aplikasi mendukung **Bahasa Indonesia** dan **English**:
-- Buka tab **Profil** → **Bahasa** → pilih bahasa
+1. Masuk ke folder aplikasi mobile:
+   ```bash
+   cd mobile
+   npm install
+   ```
+2. Jalankan Metro Bundler:
+   ```bash
+   npx expo start
+   ```
+3. Buka tab **Profil** di dalam aplikasi untuk mengatur target server backend:
+   - **🌐 STB Resmi (Produksi):** `https://matchabaobei.stei.fun/api/v1`
+   - **⚡ Cloudflare Tunnel (Pengembangan):** `https://interview-visits-retro-nec.trycloudflare.com/api/v1`
+   - **🏠 WiFi LAN:** `http://192.168.1.13:8000/api/v1`
 
 ---
 
 ## Kredensial Demo
 
-| Field | Value |
-|-------|-------|
-| **Email** | `demo@nusajalur.id` |
-| **Password** | `demo1234` |
-| **API Key (B2B)** | `nj_live_matchabaobei_tst2026_secret_key` |
-| **Base URL** | `https://matchabaobei.stei.fun/api/v1` |
-| **Swagger UI** | `https://matchabaobei.stei.fun/docs` |
-
-> 💡 Di aplikasi mobile, klik tombol **"⚡ Masuk Akun Demo (1-Klik)"** untuk login otomatis.
+| Komponen | Nilai Kredensial |
+|----------|-------------------|
+| **Base URL API Produksi** | `https://matchabaobei.stei.fun/api/v1` |
+| **Email Akun Demo** | `demo@nusajalur.id` |
+| **Password Akun Demo** | `demo1234` |
+| **B2B Test API Key** | `nj_live_matchabaobei_tst2026_secret_key` |
+| **Swagger UI Interaktif** | `http://localhost:8000/docs` *(Hanya dapat diakses pada jaringan lokal server/pengembangan, rute Cloudflare publik membatasi akses pada prefix `/api/*`)* |
 
 ---
 
-## Trail Data (6 Rute Bandung)
+## Daftar Lengkap Rute Budaya (Bandung & Jakarta)
 
-| # | Judul | Tema | Jarak | Kalori | Harga |
-|---|-------|------|-------|--------|-------|
-| 1 | Braga Heritage Walk | heritage | 2.4 km | 112 kcal | Rp 25.000 |
-| 2 | Dago Culinary & Culture | kuliner | 3.1 km | 148 kcal | Rp 30.000 |
-| 3 | Hutan Kota Babakan Siliwangi | alam | 4.5 km | 220 kcal | Rp 20.000 |
-| 4 | Bandung Art Deco Walk | arsitektur | 2.8 km | 130 kcal | Rp 28.000 |
-| 5 | Rute Sejarah BLA 1946 | sejarah | 5.2 km | 268 kcal | Rp 35.000 |
-| 6 | Pasar Baru Textile Heritage | heritage | 2.0 km | 95 kcal | Rp 22.000 |
+Saat ini tersedia **11 rute jalan kaki budaya terukur** yang siap dijelajahi:
+
+### 🏛️ Kota Bandung (6 Rute)
+1. **Jelajah Kolonial & Art Deco Braga - Asia Afrika** (`trail-braga-heritage`)
+   * *2.4 km · 45 mnt · 3.200 langkah · 160 kcal · Rp 25.000*
+   * Pos: Gedung Merdeka KAA, Titik Nol Kilometer, Gedung De Vries, Selasar Seni Gasmin.
+2. **Kuliner Pagi & Pasar Tradisional Cihapit** (`trail-cihapit-culinary`)
+   * *2.1 km · 40 mnt · 2.800 langkah · 140 kcal · Rp 20.000*
+   * Pos: Pasar Cihapit 1947, Warung Kopi Djie Tjong, Taman Cibeunying & Sentra Bawean.
+3. **Pusat Pemerintahan & Taman Kota Balai Kota - Gedung Sate** (`trail-arsitektur-balaikota-gedungsate`)
+   * *3.2 km · 55 mnt · 4.300 langkah · 210 kcal · Rp 25.000*
+   * Pos: Taman Sejarah Balai Kota, Taman Lansia Cisangkuy, Plaza Depan Gedung Sate.
+4. **Jalur Hijau Intelektual Ganesha - Sabuga ITB** (`trail-ganesha-sabuga-itb`)
+   * *2.8 km · 50 mnt · 3.700 langkah · 185 kcal · Rp 20.000*
+   * Pos: Gerbang Utama Aula Barat ITB, Hutan Kota Babakan Siliwangi, Kolam Retensi Sasana Budaya Ganesha.
+5. **Ekspedisi Rimba Alam & Goa Sejarah Dago Pakar** (`trail-alam-dago-pakar`)
+   * *4.5 km · 75 mnt · 6.000 langkah · 310 kcal · Rp 30.000*
+   * Pos: Plaza Pintu Utama Tahura Djuanda, Goa Jepang 1942, Goa Belanda & Terowongan PLTA Bengkok.
+6. **Nostalgia Pecinan Kuno & Eksotisme Malam Cibadak** (`trail-pecinan-cibadak`)
+   * *2.2 km · 40 mnt · 2.900 langkah · 150 kcal · Rp 20.000*
+   * Pos: Klenteng Satya Budhi (1885), Pabrik Kopi Aroma Banceuy (1930), Koridor Kuliner Cibadak.
+
+### 🏙️ DKI Jakarta (5 Rute Baru)
+7. **Jejak Sejarah Kota Tua & Pelabuhan Sunda Kelapa** (`trail-jkt-kotatua-sundakelapa`)
+   * *3.8 km · 65 mnt · 5.100 langkah · 245 kcal · Rp 25.000*
+   * Pos: Taman Fatahillah & Museum Sejarah Jakarta, Jembatan Jungkit Kota Intan 1628, Pelabuhan Pinisi Sunda Kelapa.
+8. **Wisata Budaya & Kuliner Legendaris Glodok Pecinan** (`trail-jkt-glodok-pecinan`)
+   * *2.5 km · 45 mnt · 3.400 langkah · 170 kcal · Rp 20.000*
+   * Pos: Pantjoran Tea House (Tradisi Patekoan), Gang Gloria (Kopi Es Tak Kie 1927), Vihara Dharma Bhakti (Kim Tek Ie 1650).
+9. **Arsitektur Klasik Lapangan Banteng - Gedung Kesenian Jakarta** (`trail-jkt-lapangan-banteng`)
+   * *3.0 km · 50 mnt · 4.000 langkah · 195 kcal · Rp 20.000*
+   * Pos: Monumen Pembebasan Irian Barat, Katedral Jakarta & Masjid Istiqlal, Gedung Kesenian Jakarta (Schouwburg 1821).
+10. **Jejak Proklamasi & Pesona Cagar Budaya Menteng - Cikini** (`trail-jkt-menteng-cikini`)
+    * *3.6 km · 60 mnt · 4.800 langkah · 230 kcal · Rp 25.000*
+    * Pos: Tugu Proklamasi (Pegangsaan Timur 56), Taman Suropati Kota Taman Menteng, Taman Ismail Marzuki & Rumah Raden Saleh.
+11. **Harmoni & Kearifan Budaya Betawi Setu Babakan** (`trail-jkt-setu-babakan`)
+    * *4.2 km · 55 mnt · 5.500 langkah · 260 kcal · Rp 20.000*
+    * Pos: Gerbang Utama Danau Setu Babakan, Museum Rumah Adat Kebaya & Bapang, Dermaga Saung Kuliner Tradisional Betawi.
 
 ---
 
 ## Lisensi
 
-Proyek ini dibuat untuk keperluan akademik Tugas 2 II3160 TST 2026.  
-Tim: **matchabaobei** · Kelas K01 · Institut Teknologi Bandung
-
----
-
-*Dokumentasi lengkap per-komponen: lihat [`backend/README.md`](backend/README.md) dan [`mobile/README.md`](mobile/README.md)*
+Proyek ini dikembangkan untuk pemenuhan Tugas 2 Mata Kuliah II3160 Teknologi Sistem Terintegrasi (TST) Semester Genap 2025/2026.  
+Hak Cipta © 2026 **Tim matchabaobei (Kelas K01)** — Sekolah Teknik Elektro dan Informatika, Institut Teknologi Bandung.

@@ -19,11 +19,12 @@ class TrailService:
     def list_trails(
         self,
         theme: Optional[str] = None,
+        city: Optional[str] = None,
         max_duration_min: Optional[int] = None,
         user_lat: Optional[float] = None,
         user_lon: Optional[float] = None,
     ) -> TrailsListResponse:
-        trails = self.trail_repo.get_all(theme=theme, max_duration_min=max_duration_min)
+        trails = self.trail_repo.get_all(theme=theme, city=city, max_duration_min=max_duration_min)
 
         items: List[TrailListItem] = []
         for t in trails:

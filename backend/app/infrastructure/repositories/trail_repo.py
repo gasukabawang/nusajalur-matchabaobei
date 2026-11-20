@@ -10,6 +10,7 @@ class TrailRepository:
     def get_all(
         self,
         theme: Optional[str] = None,
+        city: Optional[str] = None,
         max_duration_min: Optional[int] = None,
         min_kcal: Optional[int] = None,
         max_kcal: Optional[int] = None,
@@ -20,6 +21,8 @@ class TrailRepository:
         )
         if theme:
             query = query.filter(Trail.theme.ilike(f"%{theme}%"))
+        if city:
+            query = query.filter(Trail.city.ilike(f"%{city}%"))
         if max_duration_min:
             query = query.filter(Trail.est_duration_min <= max_duration_min)
         if min_kcal:

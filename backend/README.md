@@ -1,35 +1,35 @@
 # NusaJalur — Backend Microservice
 
 > FastAPI + SQLite WAL + Docker ARM64  
-> Base URL: `https://matchabaobei.stei.fun/api/v1`
+> Base URL Produksi: `https://matchabaobei.stei.fun/api/v1`
 
-Dokumentasi lengkap ada di **[README root](../README.md)**.
+Dokumentasi lengkap arsitektur dan panduan menyeluruh ada di **[README Utama](../README.md)**.
 
 ---
 
-## Quick Start
+## Quick Start (Lokal)
 
 ```bash
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Setup .env
+# 2. Setup environment
 cp ../.env.example ../.env
 
-# 3. Seed database
-cd ..
-python backend/scripts/seed.py
+# 3. Seed database (11 rute Bandung & Jakarta + Akun Demo + API Key)
+python scripts/seed.py
 
-# 4. Jalankan server
-python -m uvicorn app.main:app --app-dir backend --host 0.0.0.0 --port 8000 --reload
+# 4. Jalankan server FastAPI
+python -m uvicorn app.main:app --app-dir . --host 0.0.0.0 --port 8000 --reload
 ```
 
-**Swagger UI:** `http://localhost:8000/docs`  
-**OpenAPI Schema:** `http://localhost:8000/openapi.json`
+* **Swagger UI (Lokal):** `http://localhost:8000/docs`  
+* **OpenAPI Schema (Lokal):** `http://localhost:8000/openapi.json`
+* **Catatan Rute Cloudflare:** Subdomain publik `https://matchabaobei.stei.fun` hanya mengekspos endpoint API (`/api/*`), Swagger UI diakses secara privat di jaringan lokal `http://localhost:8000/docs`.
 
 ---
 
-## Struktur Aplikasi (DDD)
+## Struktur Aplikasi (Domain-Driven Design)
 
 ```
 app/
@@ -46,9 +46,9 @@ app/
 │   └── repositories/      # Data access: user, trail, pass, api_key
 ├── application/
 │   ├── auth_service.py    # Register, login logic
-│   ├── trail_service.py   # Trails listing + detail + Haversine sort
+│   ├── trail_service.py   # Trails listing + filter city/theme + Haversine sort
 │   ├── pricing_service.py # Dynamic pricing (off-peak 20% discount)
-│   ├── pass_service.py    # Pass purchase + GPS check-in + commission
+│   ├── pass_service.py    # Pass purchase + GPS check-in + 70/15/15 commission
 │   └── public_service.py  # B2B: nearby destinations + measured trails
 └── api/
     └── v1/
@@ -72,24 +72,29 @@ SECRET_KEY=your-very-long-random-secret-key
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 TUNNEL_TOKEN=eyJhIjoiXXXXX...
-API_KEY_HASH=sha256-of-your-b2b-api-key
+API_KEY_HASH=cda4bf67fc84886d15572c76508d74ad5feffb6f56bfc2966bb837fa55375b19
 ```
 
 ---
 
-## Docker Compose (ARM64 STB)
+## Docker & Infrastruktur STB Armbian
+
+Pada STB HG680P (Armbian):
+* `cloudflared` berjalan sebagai service systemd host.
+* Nginx host (port 80) meneruskan trafik `/api/*` ke container `gateway` (port 8090 -> 80).
+* Direktori docker `data-root` diarahkan ke flashdisk eksternal `/mnt/usb/docker`.
 
 ```bash
-# Build & jalankan
+# Build & jalankan di STB
 docker compose up -d --build
 
-# Seed data (pertama kali)
+# Seed data (11 rute Bandung & Jakarta)
 docker compose run --rm core-service python /app/scripts/seed.py
 
 # Generate openapi.yaml
 docker compose run --rm core-service python /app/scripts/export_openapi.py
 
-# Lihat log
+# Cek log service
 docker compose logs -f core-service
 ```
 
@@ -99,9 +104,9 @@ docker compose logs -f core-service
 
 | Script | Perintah | Fungsi |
 |--------|----------|--------|
-| seed.py | `python backend/scripts/seed.py` | Isi 6 trail + demo user + API key |
-| test_api.py | `python backend/scripts/test_api.py` | 11 automated tests (semua harus PASS) |
-| export_openapi.py | `python backend/scripts/export_openapi.py` | Generate `openapi.yaml` |
+| `seed.py` | `python backend/scripts/seed.py` | Mengisi idempoten 11 rute (Bandung & Jakarta), kurator, akun demo, dan API key |
+| `test_api.py` | `python backend/scripts/test_api.py` | Test suite komprehensif 11 pengujian endpoint |
+| `export_openapi.py` | `python backend/scripts/export_openapi.py` | Generate file statis `openapi.yaml` |
 
 ---
 
@@ -111,6 +116,6 @@ docker compose logs -f core-service
 |-----------|-------|
 | Off-peak window | 05:00–08:30 WIB |
 | Off-peak discount | 20% |
-| Komisi UMKM | 70% |
-| Komisi Kurator | 15% |
-| Komisi Platform | 15% |
+| Alokasi Voucher UMKM | 70% |
+| Royalti Kurator Lokal | 15% |
+| Pemeliharaan Platform | 15% |
