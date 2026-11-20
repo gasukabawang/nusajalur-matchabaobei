@@ -44,6 +44,10 @@ export const ProfileScreen: React.FC = () => {
       setStats(data);
     } catch (err: any) {
       console.log('Error loading stats:', err);
+      if (err?.code === 'INVALID_TOKEN' || err?.code === 'USER_NOT_FOUND' || err?.status === 401) {
+        await logout();
+        return;
+      }
     } finally {
       setLoadingStats(false);
     }

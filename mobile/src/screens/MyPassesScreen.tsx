@@ -12,6 +12,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../context/LanguageContext';
+import { useAuth } from '../context/AuthContext';
 import { Colors } from '../theme/colors';
 import { apiService } from '../api/apiService';
 import { PassDetail } from '../types';
@@ -22,6 +23,7 @@ interface MyPassesScreenProps {
 
 export const MyPassesScreen: React.FC<MyPassesScreenProps> = ({ navigation }) => {
   const { t } = useLanguage();
+  const { logout } = useAuth();
   const [passes, setPasses] = useState<PassDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,6 +41,10 @@ export const MyPassesScreen: React.FC<MyPassesScreenProps> = ({ navigation }) =>
       setPasses(trips.passes || []);
     } catch (err: any) {
       console.log('Error loading passes:', err);
+      if (err?.code === 'INVALID_TOKEN' || err?.code === 'USER_NOT_FOUND' || err?.status === 401) {
+        await logout();
+        return;
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);

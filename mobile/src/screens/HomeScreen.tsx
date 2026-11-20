@@ -50,7 +50,7 @@ const TRAIL_COLORS: Record<string, string[]> = {
 };
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { t } = useLanguage();
   const [trails, setTrails] = useState<Trail[]>([]);
   const [selectedTheme, setSelectedTheme] = useState('all');
@@ -93,6 +93,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
       setTrails(res.trails);
     } catch (err: any) {
       console.log('Error fetching trails:', err);
+      // Auto-logout if token is expired/invalid
+      if (err?.code === 'INVALID_TOKEN' || err?.code === 'USER_NOT_FOUND' || err?.status === 401) {
+        await logout();
+        return;
+      }
       setApiError(err?.message || 'Tidak dapat terhubung ke server. Periksa koneksi atau ganti server di Profil.');
     } finally {
       setLoading(false);
@@ -235,7 +240,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.subtitle}>{t.home.subtitle}</Text>
+        <Text style={styles.subtitle} numberOfLines={2}>
+          {t.home.subtitle}
+        </Text>
 
         {/* Theme Filter Chips */}
         <ScrollView
@@ -374,7 +381,10 @@ const styles = StyleSheet.create({
   gpsBtnTextActive: { color: Colors.primary },
 
   subtitle: {
-    fontSize: 20, fontWeight: '800', color: Colors.textPrimary,
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    lineHeight: 25,
     marginBottom: 14,
   },
 

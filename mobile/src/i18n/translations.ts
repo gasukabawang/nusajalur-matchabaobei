@@ -33,7 +33,7 @@ export const translations = {
     // === HOME SCREEN ===
     home: {
       greeting: 'Hai',
-      subtitle: 'Mau jalan kaki ke mana hari ini? 🌿',
+      subtitle: 'Mau jalan santai ke mana hari ini? 🌿',
       searchPlaceholder: 'Cari rute budaya...',
       nearbyLabel: 'Terdekat dari lokasi Anda',
       allTrails: 'Semua Rute',
